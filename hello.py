@@ -11,7 +11,7 @@ os.sys.path.insert(0, parentdir)
 
 import pybullet as p
 import pybullet_data
-from pybullet_robot_envs.envs.panda_envs.panda_env import pandaEnv
+from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 from pybullet_object_models import ycb_objects
 
 import time

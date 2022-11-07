@@ -148,6 +148,7 @@ def set_pose(physicsClientId, body, pose):
     quat = pose[3:]
     p.resetBasePositionAndOrientation(body, point, quat, physicsClientId=physicsClientId)
 
+# TODO: simplified version
 def get_collision7d_fn(physicsClientId, body, obstacles=[], attachments=[], disabled_collisions={}, **kwargs):
     """get collision checking function collision_fn(joint_values) -> bool for a floating body (no movable joint).
 

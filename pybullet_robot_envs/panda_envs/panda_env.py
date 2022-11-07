@@ -147,39 +147,39 @@ class pandaEnv:
     def grasp(self, obj_id=None):
         self.apply_action_fingers([0.0, 0.0], obj_id)
 
-    # def get_gripper_pos(self):
-    #     action = [0, 0]
-    #     idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
-    #     action[0] = p.getJointState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[0]
-    #     action[1] = p.getJointState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[0]
+    def get_gripper_pos(self):
+        action = [0, 0]
+        idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
+        action[0] = p.getJointState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[0]
+        action[1] = p.getJointState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[0]
 
-    #     return action
+        return action
 
-    # def apply_action_fingers(self, action, obj_id=None):
-    #     # move finger joints in position control
-    #     assert len(action) == 2, ('finger joints are 2! The number of actions you passed is ', len(action))
+    def apply_action_fingers(self, action, obj_id=None):
+        # move finger joints in position control
+        assert len(action) == 2, ('finger joints are 2! The number of actions you passed is ', len(action))
 
-    #     idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
+        idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
 
-    #     # use object id to check contact force and eventually stop the finger motion
-    #     if obj_id is not None:
-    #         _, forces = self.check_contact_fingertips(obj_id)
-    #         # print("contact forces {}".format(forces))
+        # use object id to check contact force and eventually stop the finger motion
+        if obj_id is not None:
+            _, forces = self.check_contact_fingertips(obj_id)
+            # print("contact forces {}".format(forces))
 
-    #         if forces[0] >= 30:
-    #             action[0] = p.getJointState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[0]
+            if forces[0] >= 30:
+                action[0] = p.getJointState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[0]
 
-    #         if forces[1] >= 30:
-    #             action[1] = p.getJointState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[0]
+            if forces[1] >= 30:
+                action[1] = p.getJointState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[0]
 
-    #     for i, idx in enumerate(idx_fingers):
-    #         p.setJointMotorControl2(self.robot_id,
-    #                                 idx,
-    #                                 p.POSITION_CONTROL,
-    #                                 targetPosition=action[i],
-    #                                 force=10,
-    #                                 maxVelocity=1,
-    #                                 physicsClientId=self._physics_client_id)
+        for i, idx in enumerate(idx_fingers):
+            p.setJointMotorControl2(self.robot_id,
+                                    idx,
+                                    p.POSITION_CONTROL,
+                                    targetPosition=action[i],
+                                    force=10,
+                                    maxVelocity=1,
+                                    physicsClientId=self._physics_client_id)
 
 
     def apply_action(self, action, max_vel=-1):
@@ -251,50 +251,50 @@ class pandaEnv:
 
     #     return (len(contact_pts) - n_fingertips_contact) > 0
 
-    # def check_contact_fingertips(self, obj_id):
-    #     # check if there is any contact on the internal part of the fingers, to control if they are correctly touching an object
+    def check_contact_fingertips(self, obj_id):
+        # check if there is any contact on the internal part of the fingers, to control if they are correctly touching an object
 
-    #     idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
+        idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
 
-    #     p0 = p.getContactPoints(obj_id, self.robot_id, linkIndexB=idx_fingers[0], physicsClientId=self._physics_client_id)
-    #     p1 = p.getContactPoints(obj_id, self.robot_id, linkIndexB=idx_fingers[1], physicsClientId=self._physics_client_id)
+        p0 = p.getContactPoints(obj_id, self.robot_id, linkIndexB=idx_fingers[0], physicsClientId=self._physics_client_id)
+        p1 = p.getContactPoints(obj_id, self.robot_id, linkIndexB=idx_fingers[1], physicsClientId=self._physics_client_id)
 
-    #     p0_contact = 0
-    #     p0_f = [0]
-    #     if len(p0) > 0:
-    #         # get cartesian position of the finger link frame in world coordinates
-    #         w_pos_f0 = p.getLinkState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[4:6]
-    #         f0_pos_w = p.invertTransform(w_pos_f0[0], w_pos_f0[1])
+        p0_contact = 0
+        p0_f = [0]
+        if len(p0) > 0:
+            # get cartesian position of the finger link frame in world coordinates
+            w_pos_f0 = p.getLinkState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[4:6]
+            f0_pos_w = p.invertTransform(w_pos_f0[0], w_pos_f0[1])
 
-    #         for pp in p0:
-    #             # compute relative position of the contact point wrt the finger link frame
-    #             f0_pos_pp = p.multiplyTransforms(f0_pos_w[0], f0_pos_w[1], pp[6], f0_pos_w[1])
+            for pp in p0:
+                # compute relative position of the contact point wrt the finger link frame
+                f0_pos_pp = p.multiplyTransforms(f0_pos_w[0], f0_pos_w[1], pp[6], f0_pos_w[1])
 
-    #             # check if contact in the internal part of finger
-    #             if f0_pos_pp[0][1] <= 0.001 and f0_pos_pp[0][2] < 0.055 and pp[8] > -0.005:
-    #                 p0_contact += 1
-    #                 p0_f.append(pp[9])
+                # check if contact in the internal part of finger
+                if f0_pos_pp[0][1] <= 0.001 and f0_pos_pp[0][2] < 0.055 and pp[8] > -0.005:
+                    p0_contact += 1
+                    p0_f.append(pp[9])
 
-    #     p0_f_mean = np.mean(p0_f)
+        p0_f_mean = np.mean(p0_f)
 
-    #     p1_contact = 0
-    #     p1_f = [0]
-    #     if len(p1) > 0:
-    #         w_pos_f1 = p.getLinkState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[4:6]
-    #         f1_pos_w = p.invertTransform(w_pos_f1[0], w_pos_f1[1])
+        p1_contact = 0
+        p1_f = [0]
+        if len(p1) > 0:
+            w_pos_f1 = p.getLinkState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[4:6]
+            f1_pos_w = p.invertTransform(w_pos_f1[0], w_pos_f1[1])
 
-    #         for pp in p1:
-    #             # compute relative position of the contact point wrt the finger link frame
-    #             f1_pos_pp = p.multiplyTransforms(f1_pos_w[0], f1_pos_w[1], pp[6], f1_pos_w[1])
+            for pp in p1:
+                # compute relative position of the contact point wrt the finger link frame
+                f1_pos_pp = p.multiplyTransforms(f1_pos_w[0], f1_pos_w[1], pp[6], f1_pos_w[1])
 
-    #             # check if contact in the internal part of finger
-    #             if f1_pos_pp[0][1] >= -0.001 and f1_pos_pp[0][2] < 0.055 and pp[8] > -0.005:
-    #                 p1_contact += 1
-    #                 p1_f.append(pp[9])
+                # check if contact in the internal part of finger
+                if f1_pos_pp[0][1] >= -0.001 and f1_pos_pp[0][2] < 0.055 and pp[8] > -0.005:
+                    p1_contact += 1
+                    p1_f.append(pp[9])
 
-    #     p1_f_mean = np.mean(p0_f)
+        p1_f_mean = np.mean(p0_f)
 
-    #     return (p0_contact > 0) + (p1_contact > 0), (p0_f_mean, p1_f_mean)
+        return (p0_contact > 0) + (p1_contact > 0), (p0_f_mean, p1_f_mean)
 
 
     def debug_gui(self):

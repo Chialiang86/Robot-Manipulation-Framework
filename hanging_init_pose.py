@@ -13,11 +13,11 @@ import pybullet_data
 from hanging_by_trajectory import draw_bbox, draw_coordinate, get_matrix_from_pos_rot, get_pos_rot_from_matrix
 
 # for motion planners
-from utils.motion_planning_utils import get_collision7d_fn
+# from utils.motion_planning_utils import get_collision7d_fn
 
 # for robot control
 # from pybullet_planning.interfaces.robots.joint import get_custom_limits
-from pybullet_robot_envs.envs.panda_envs.panda_env import pandaEnv
+from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 
 
 currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -67,7 +67,7 @@ def update_debug_param(robot : pandaEnv):
 
 def robot_key_callback(robot : pandaEnv, keys : dict, object_id : int=None):
 
-    move_offset = 0.005
+    move_offset = 0.002
     rot_offset = 0.01
     ret = None
 
@@ -141,20 +141,20 @@ def robot_key_callback(robot : pandaEnv, keys : dict, object_id : int=None):
     return ret
 
 
-def refine_tgt_obj_pose(physicsClientId, body, obstacles=[]):
-    collision7d_fn = get_collision7d_fn(physicsClientId, body, obstacles=obstacles)
+# def refine_tgt_obj_pose(physicsClientId, body, obstacles=[]):
+#     collision7d_fn = get_collision7d_fn(physicsClientId, body, obstacles=obstacles)
 
-    low_limit = [-0.005, -0.005, -0.005, -np.pi / 180, -np.pi / 180, -np.pi / 180]
-    high_limit = [ 0.005,  0.005,  0.005,  np.pi / 180,  np.pi / 180,  np.pi / 180]
+#     low_limit = [-0.005, -0.005, -0.005, -np.pi / 180, -np.pi / 180, -np.pi / 180]
+#     high_limit = [ 0.005,  0.005,  0.005,  np.pi / 180,  np.pi / 180,  np.pi / 180]
 
-    obj_pos, obj_rot = p.getBasePositionAndOrientation(body)
-    original_pose = np.asarray(obj_pos + obj_rot)
-    refine_pose = original_pose
-    while collision7d_fn(tuple(refine_pose)):
-        refine_pose6d = np.concatenate((np.asarray(obj_pos), R.from_quat(obj_rot).as_rotvec())) + np.random.uniform(low_limit, high_limit)
-        refine_pose = np.concatenate((refine_pose6d[:3], R.from_rotvec(refine_pose6d[3:]).as_quat()))
-        # print(refine_pose)
-    return refine_pose
+#     obj_pos, obj_rot = p.getBasePositionAndOrientation(body)
+#     original_pose = np.asarray(obj_pos + obj_rot)
+#     refine_pose = original_pose
+#     while collision7d_fn(tuple(refine_pose)):
+#         refine_pose6d = np.concatenate((np.asarray(obj_pos), R.from_quat(obj_rot).as_rotvec())) + np.random.uniform(low_limit, high_limit)
+#         refine_pose = np.concatenate((refine_pose6d[:3], R.from_rotvec(refine_pose6d[3:]).as_quat()))
+#         # print(refine_pose)
+#     return refine_pose
 
 def main(args):
 
@@ -212,18 +212,20 @@ def main(args):
     wall_orientation = p.getQuaternionFromEuler([0, 0, 0])
     # wall_id = p.loadURDF("models/wall/wall.urdf", wall_pos, wall_orientation)
     
-    # hook initialization
-    hook_pos = json_dict['hook_pose'][:3]
-    hook_orientation = json_dict['hook_pose'][3:]
-    hook_id = p.loadURDF(json_dict['hook_path'], hook_pos, hook_orientation)
 
     # get target hanging pose
     assert len(json_dict['contact_info']) > 0, 'contact info is empty'
-    index = 0
-    contact_info = json_dict['contact_info'][index]
-    tgt_obj_pos = contact_info['object_pose'][:3]
-    tgt_obj_rot = contact_info['object_pose'][3:]
-    obj_id_target, _ = load_obj_urdf(json_dict['obj_path'])
+    contact_info = json_dict['contact_info']
+    # hook initialization
+    hook_pos = contact_info['hook_pose'][:3]
+    hook_orientation = contact_info['hook_pose'][3:]
+    hook_id = p.loadURDF(json_dict['hook_path'], hook_pos, hook_orientation)
+    p.resetBasePositionAndOrientation(hook_id, hook_pos, hook_orientation)
+
+    tgt_obj_pos = contact_info['obj_pose'][:3]
+    tgt_obj_rot = contact_info['obj_pose'][3:]
+    obj_id_target = p.loadURDF(json_dict['obj_path'], tgt_obj_pos, tgt_obj_rot)
+    # obj_id_target, _ = load_obj_urdf(json_dict['obj_path'])
     p.resetBasePositionAndOrientation(obj_id_target, tgt_obj_pos, tgt_obj_rot)
 
     # standing_pos = [0.5, 0.0, 0.77] # only for mug_70
@@ -295,49 +297,51 @@ def main(args):
                 obj_transform = get_matrix_from_pos_rot(obj_pos, obj_rot)
                 obj2gripper = np.linalg.inv(obj_transform) @ gripper_transform
 
-                # for novel poses
-                deg2rad = np.pi / 180
-                pos_low_limit = np.array( [-0.05,  0.0, -0.05])
-                pos_high_limit = np.array([ 0.05,  0.3,  0.15])
-                rot_low_limit = np.array( [-5 * deg2rad, -5 * deg2rad, -5 * deg2rad])
-                rot_high_limit = np.array([ 5 * deg2rad,  5 * deg2rad,  5 * deg2rad])
+                print(obj2gripper)
+
+                # # for novel poses
+                # deg2rad = np.pi / 180
+                # pos_low_limit = np.array( [-0.05,  0.0, -0.05])
+                # pos_high_limit = np.array([ 0.05,  0.3,  0.15])
+                # rot_low_limit = np.array( [-5 * deg2rad, -5 * deg2rad, -5 * deg2rad])
+                # rot_high_limit = np.array([ 5 * deg2rad,  5 * deg2rad,  5 * deg2rad])
                 
-                initial_pose_ele = {
-                    'robot_pose': gripper_pose,
-                    'object_pose': obj_pose
-                }
-                json_dict['initial_pose'].append(initial_pose_ele)
+                # initial_pose_ele = {
+                #     'robot_pose': gripper_pose,
+                #     'object_pose': obj_pose
+                # }
+                # json_dict['initial_pose'].append(initial_pose_ele)
 
-                draw_bbox(np.asarray(obj_pos) + pos_low_limit, np.asarray(obj_pos) + pos_high_limit)
+                # draw_bbox(np.asarray(obj_pos) + pos_low_limit, np.asarray(obj_pos) + pos_high_limit)
 
-                cnt = 0
-                while cnt < max_cnt:
-                    # for new obj pose
-                    obj_pos_new = np.asarray(obj_pos) + np.random.uniform(low=pos_low_limit, high=pos_high_limit)
-                    obj_rot_new = R.from_quat(obj_rot).as_rotvec() + np.random.uniform(low=rot_low_limit, high=rot_high_limit)
-                    obj_rot_new = R.from_rotvec(obj_rot_new).as_quat()
-                    obj_pose_new = list(obj_pos_new) + list(obj_rot_new)
-                    draw_coordinate(obj_pose_new)
+                # cnt = 0
+                # while cnt < max_cnt:
+                #     # for new obj pose
+                #     obj_pos_new = np.asarray(obj_pos) + np.random.uniform(low=pos_low_limit, high=pos_high_limit)
+                #     obj_rot_new = R.from_quat(obj_rot).as_rotvec() + np.random.uniform(low=rot_low_limit, high=rot_high_limit)
+                #     obj_rot_new = R.from_rotvec(obj_rot_new).as_quat()
+                #     obj_pose_new = list(obj_pos_new) + list(obj_rot_new)
+                #     draw_coordinate(obj_pose_new)
                     
-                    # for new gripper pose
-                    obj_transform_new = get_matrix_from_pos_rot(obj_pos_new, obj_rot_new)
-                    gripper_transform_new = obj_transform_new @ obj2gripper
-                    gripper_pos_new, gripper_rot_new = get_pos_rot_from_matrix(gripper_transform_new)
-                    gripper_pose_new = list(gripper_pos_new) + list(gripper_rot_new)
+                #     # for new gripper pose
+                #     obj_transform_new = get_matrix_from_pos_rot(obj_pos_new, obj_rot_new)
+                #     gripper_transform_new = obj_transform_new @ obj2gripper
+                #     gripper_pos_new, gripper_rot_new = get_pos_rot_from_matrix(gripper_transform_new)
+                #     gripper_pose_new = list(gripper_pos_new) + list(gripper_rot_new)
 
-                    # refine initial pose of gripper and object
-                    initial_pose_ele = {
-                        'robot_pose': gripper_pose_new,
-                        'object_pose': obj_pose_new
-                    }
-                    json_dict['initial_pose'].append(initial_pose_ele)
+                #     # refine initial pose of gripper and object
+                #     initial_pose_ele = {
+                #         'robot_pose': gripper_pose_new,
+                #         'object_pose': obj_pose_new
+                #     }
+                #     json_dict['initial_pose'].append(initial_pose_ele)
 
-                    cnt += 1
-                    print(f'cnt : {cnt}, pose : {obj_pose_new}')
+                #     cnt += 1
+                #     print(f'cnt : {cnt}, pose : {obj_pose_new}')
                 
-                with open(input_json, 'w') as f:
-                    print(f'append to {input_json}')
-                    json_dict = json.dump(json_dict, f, indent=4)
+                # with open(input_json, 'w') as f:
+                #     print(f'append to {input_json}')
+                #     json_dict = json.dump(json_dict, f, indent=4)
                 break
 
             elif ord('o') in keys and keys[ord('o')] & (p.KEY_WAS_TRIGGERED): 
@@ -377,7 +381,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input-json', '-ij', type=str, default='data/Hook_bar-hanging_exp/Hook_bar-hanging_exp_daily_41.json')
+    parser.add_argument('--input-json', '-ij', type=str, default='3d_models/hanging_pose/Hook_60-mug.json')
     parser.add_argument('--max-cnt', '-mc', type=int, default=1000)
     args = parser.parse_args()
     main(args)

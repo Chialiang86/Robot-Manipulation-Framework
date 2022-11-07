@@ -65,3 +65,19 @@ def draw_bbox(start : list or tuple or np.ndarray,
         p.addUserDebugLine(points_bb[i], points_bb[(i + 1) % 4], [1, 0, 0])
         p.addUserDebugLine(points_bb[i + 4], points_bb[(i + 1) % 4 + 4], [1, 0, 0])
         p.addUserDebugLine(points_bb[i], points_bb[i + 4], [1, 0, 0])
+
+def get_robot_joint_info(robot_id):
+    num_joints = p.getNumJoints(robot_id)
+
+    joint_states = p.getJointStates(robot_id, range(0, num_joints))
+    joint_poses = [x[0] for x in joint_states]
+    joint_names = []
+    joint_types = []
+    for i in range(num_joints):
+        joint_info = p.getJointInfo(robot_id, i)
+        joint_name = joint_info[1]
+        joint_type = joint_info[2]
+        joint_names.append(joint_name)
+        joint_types.append(joint_type)
+    
+    return joint_names, joint_poses, joint_types
