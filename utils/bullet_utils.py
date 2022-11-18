@@ -11,6 +11,24 @@ def wxyz2xyzw(quat : np.ndarray):
     assert len(quat) == 4, f'quaternion size must be 4, got {len(quat)}'
     return np.asarray([quat[1], quat[2], quat[3], quat[0]])
 
+def pose_6d_to_7d(pose : list or tuple or np.ndarray):
+    assert len(pose) == 6, f'input array size should be 6d but got {len(pose)}d'
+
+    pos = pose[:3]
+    rot_vec = pose[3:]
+    rot_quat = R.from_rotvec(rot_vec).as_quat()
+
+    return list(pos) + list(rot_quat)
+
+def pose_7d_to_6d(pose : list or tuple or np.ndarray):
+    assert len(pose) == 7, f'input array size should be 7d but got {len(pose)}d'
+
+    pos = pose[:3]
+    rot_quat = pose[3:]
+    rot_vec = R.from_quat(rot_quat).as_rotvec()
+
+    return list(pos) + list(rot_vec)
+
 def get_matrix_from_pos_rot(pos : list or tuple or np.ndarray, rot : list or tuple or np.ndarray):
     assert (len(pos) == 3 and len(rot) == 4) or (len(pos) == 3 and len(rot) == 3)
     pos_m = np.asarray(pos)
@@ -25,11 +43,27 @@ def get_matrix_from_pos_rot(pos : list or tuple or np.ndarray, rot : list or tup
     ret_m[:3, 3] = pos_m
     return ret_m
 
+def get_matrix_from_7d_pose(pose : list or tuple or np.ndarray):
+    assert (len(pose) == 7)
+    pos_m = np.asarray(pose[:3])
+    rot_m = R.from_quat(pose[3:]).as_matrix()
+    ret_m = np.identity(4)
+    ret_m[:3, :3] = rot_m
+    ret_m[:3, 3] = pos_m
+    return ret_m
+
 def get_pos_rot_from_matrix(pose : np.ndarray):
     assert pose.shape == (4, 4)
     pos = pose[:3, 3]
     rot = R.from_matrix(pose[:3, :3]).as_quat()
     return pos, rot
+
+def get_7d_pose_from_matrix(pose : np.ndarray):
+    assert pose.shape == (4, 4)
+    pos = pose[:3, 3]
+    rot = R.from_matrix(pose[:3, :3]).as_quat()
+    pose = list(pos) + list(rot)
+    return pose
 
 def draw_coordinate(pose : np.ndarray or tuple or list, size : float = 0.1, color : np.ndarray=np.asarray([[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
     assert (type(pose) == np.ndarray and pose.shape == (4, 4)) or (len(pose) == 7)

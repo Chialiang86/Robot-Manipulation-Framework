@@ -11,18 +11,17 @@ from robot_data import franka_panda
 
 import numpy as np
 import math as m
-from .ik import your_ik, pybullet_ik
-
 
 class pandaEnv:
 
     initial_positions = {
         'panda_joint1': 0.0, 'panda_joint2': -0.54, 'panda_joint3': 0.0,
         'panda_joint4': -2.6, 'panda_joint5': -0.30, 'panda_joint6': 2.0,
-        'panda_joint7': 1.0, 'panda_finger_joint1': 0.04, 'panda_finger_joint2': 0.04,
+        'panda_joint7': 1.0, 'panda_finger_joint1': 0.03, 'panda_finger_joint2': 0.03,
     }
 
-    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.13, 0.13, 0.475), control_orientation=1, control_eu_or_quat=0,
+    # def __init__(self, physicsClientId, use_IK=0, base_position=(-0.20, 0.10, 0.5), control_orientation=1, control_eu_or_quat=0,
+    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.13, 0.13, 0.5), control_orientation=1, control_eu_or_quat=0,
                  joint_action_space=9, includeVelObs=True):
 
         self._physics_client_id = physicsClientId
@@ -80,15 +79,15 @@ class pandaEnv:
 
         self.ll, self.ul, self.jr, self.rs = self.get_joint_ranges()
 
-        if self._use_IK:
+        # if self._use_IK:
 
-            self._home_hand_pose = [0.2, 0.0, 0.8,
-                                    min(m.pi, max(-m.pi, m.pi)),
-                                    min(m.pi, max(-m.pi, 0)),
-                                    min(m.pi, max(-m.pi, 0))]
+        #     self._home_hand_pose = [0.2, 0.0, 0.8,
+        #                             min(m.pi, max(-m.pi, m.pi)),
+        #                             min(m.pi, max(-m.pi, 0)),
+        #                             min(m.pi, max(-m.pi, 0))]
 
-            self.apply_action(self._home_hand_pose)
-            p.stepSimulation(physicsClientId=self._physics_client_id)
+        #     self.apply_action(self._home_hand_pose)
+        #     p.stepSimulation(physicsClientId=self._physics_client_id)
 
     def get_joint_name_ids(self):
         return self._joint_name_to_ids
@@ -111,6 +110,8 @@ class pandaEnv:
             upper_limits.append(ul)
             joint_ranges.append(jr)
             rest_poses.append(rp)
+
+            # print(f'{joint_name}: {ll} - {ul}')
 
         return lower_limits, upper_limits, joint_ranges, rest_poses
 
@@ -142,7 +143,7 @@ class pandaEnv:
     #     self._eu_lim = [i[:] for i in eu]
 
     def pre_grasp(self):
-        self.apply_action_fingers([0.04, 0.04])
+        self.apply_action_fingers([0.03, 0.03])
 
     def grasp(self, obj_id=None):
         self.apply_action_fingers([0.0, 0.0], obj_id)
@@ -182,64 +183,64 @@ class pandaEnv:
                                     physicsClientId=self._physics_client_id)
 
 
-    def apply_action(self, action, max_vel=-1):
+    # def apply_action(self, action):
 
-        # ------------------ #
-        # --- IK control --- #
-        # ------------------ #
+    #     # ------------------ #
+    #     # --- IK control --- #
+    #     # ------------------ #
 
-        if not (len(action) == 3 or len(action) == 6 or len(action) == 7):
-            raise AssertionError('number of action commands must be \n- 3: (dx,dy,dz)'
-                                    '\n- 6: (dx,dy,dz,droll,dpitch,dyaw)'
-                                    '\n- 7: (dx,dy,dz,qx,qy,qz,w)'
-                                    '\ninstead it is: ', len(action))
+    #     if not (len(action) == 3 or len(action) == 6 or len(action) == 7):
+    #         raise AssertionError('number of action commands must be \n- 3: (dx,dy,dz)'
+    #                                 '\n- 6: (dx,dy,dz,droll,dpitch,dyaw)'
+    #                                 '\n- 7: (dx,dy,dz,qx,qy,qz,w)'
+    #                                 '\ninstead it is: ', len(action))
 
-        # --- Constraint end-effector pose inside the workspace --- #
+    #     # --- Constraint end-effector pose inside the workspace --- #
 
-        dx, dy, dz = action[:3]
-        new_pos = [dx, dy,
-                    min(self._workspace_lim[2][1], max(self._workspace_lim[2][0], dz))]
-        new_quat_orn = action[3:7]
+    #     dx, dy, dz = action[:3]
+    #     new_pos = [dx, dy,
+    #                 min(self._workspace_lim[2][1], max(self._workspace_lim[2][0], dz))]
+    #     new_quat_orn = action[3:7]
 
-        # if orientation is not under control, keep it fixed
-        # if not self._control_orientation:
-        #     new_quat_orn = p.getQuaternionFromEuler(self._home_hand_pose[3:6])
+    #     # if orientation is not under control, keep it fixed
+    #     # if not self._control_orientation:
+    #     #     new_quat_orn = p.getQuaternionFromEuler(self._home_hand_pose[3:6])
 
-        # # otherwise, if it is defined as euler angles
-        # elif len(action) == 6:
-        #     droll, dpitch, dyaw = action[3:]
+    #     # # otherwise, if it is defined as euler angles
+    #     # elif len(action) == 6:
+    #     #     droll, dpitch, dyaw = action[3:]
 
-        #     eu_orn = [min(m.pi, max(-m.pi, droll)),
-        #                 min(m.pi, max(-m.pi, dpitch)),
-        #                 min(m.pi, max(-m.pi, dyaw))]
+    #     #     eu_orn = [min(m.pi, max(-m.pi, droll)),
+    #     #                 min(m.pi, max(-m.pi, dpitch)),
+    #     #                 min(m.pi, max(-m.pi, dyaw))]
 
-        #     new_quat_orn = p.getQuaternionFromEuler(eu_orn)
+    #     #     new_quat_orn = p.getQuaternionFromEuler(eu_orn)
 
-        # # otherwise, if it is define as quaternion
-        # elif len(action) == 7:
-        #     new_quat_orn = action[3:7]
+    #     # # otherwise, if it is define as quaternion
+    #     # elif len(action) == 7:
+    #     #     new_quat_orn = action[3:7]
 
-        # # otherwise, use current orientation
-        # else:
-        #     new_quat_orn = p.getLinkState(self.robot_id, self.end_eff_idx, physicsClientId=self._physics_client_id)[5]
+    #     # # otherwise, use current orientation
+    #     # else:
+    #     #     new_quat_orn = p.getLinkState(self.robot_id, self.end_eff_idx, physicsClientId=self._physics_client_id)[5]
 
-        # --- compute joint positions with IK --- #
-        # jointPoses = p.calculateInverseKinematics(self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
-        #                                             maxNumIterations=500,
-        #                                             residualThreshold=.001,
-        #                                             physicsClientId=self._physics_client_id)
+    #     # --- compute joint positions with IK --- #
+    #     # jointPoses = p.calculateInverseKinematics(self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
+    #     #                                             maxNumIterations=500,
+    #     #                                             residualThreshold=.001,
+    #     #                                             physicsClientId=self._physics_client_id)
         
-        jointPoses = pybullet_ik(self._physics_client_id, self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
-                                maxNumIterations=500, residualThreshold=.001)
+    #     jointPoses = pybullet_ik(self._physics_client_id, self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
+    #                             maxNumIterations=500, residualThreshold=.001)
 
-        # --- set joint control --- #
-        p.setJointMotorControlArray(bodyUniqueId=self.robot_id,
-                                    jointIndices=self._joint_name_to_ids.values(),
-                                    controlMode=p.POSITION_CONTROL,
-                                    targetPositions=jointPoses,
-                                    positionGains=[0.2] * len(jointPoses),
-                                    velocityGains=[1] * len(jointPoses),
-                                    physicsClientId=self._physics_client_id)
+    #     # --- set joint control --- #
+    #     p.setJointMotorControlArray(bodyUniqueId=self.robot_id,
+    #                                 jointIndices=self._joint_name_to_ids.values(),
+    #                                 controlMode=p.POSITION_CONTROL,
+    #                                 targetPositions=jointPoses,
+    #                                 positionGains=[0.2] * len(jointPoses),
+    #                                 velocityGains=[1] * len(jointPoses),
+    #                                 physicsClientId=self._physics_client_id)
 
     # def check_collision(self, obj_id):
     #     # check if there is any collision with an object

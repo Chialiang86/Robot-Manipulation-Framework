@@ -90,11 +90,11 @@ def rrt_connect(q1, q2, distance_fn, sample_fn, extend_fn, collision_fn,
                 print('[Results]|Iterations {}|Nodes {}|Time {}'.format(iteration, len(nodes1) + len(nodes2), elapsed_time(start_time)))
                 sys.stdout.flush()
             nodes1.extend(nodes2)
-            return configs(path1[:-1] + path2[::-1]), nodes1
+            return configs(path1[:-1] + path2[::-1])
     if verbose:
         print('[Results]|Iterations {}|Nodes {}|Time {}'.format(max_iterations - 1, len(nodes1) + len(nodes2), elapsed_time(start_time)))
         sys.stdout.flush()
-    return None, None
+    return None
 
 #################################################################
 
@@ -110,8 +110,8 @@ def birrt(start, goal, distance_fn, sample_fn, extend_fn, collision_fn, **kwargs
     :return: Path [q', ..., q"] or None if unable to find a solution
     """
     from .meta import random_restarts
-    solutions, nodess = random_restarts(rrt_connect, start, goal, distance_fn, sample_fn, extend_fn, collision_fn,
+    solutions = random_restarts(rrt_connect, start, goal, distance_fn, sample_fn, extend_fn, collision_fn,
                                 max_solutions=1, **kwargs)
     if not solutions:
         return None
-    return solutions[0], nodess[0]
+    return solutions[0]

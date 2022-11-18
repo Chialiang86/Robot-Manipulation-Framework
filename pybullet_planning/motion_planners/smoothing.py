@@ -6,7 +6,6 @@ from pybullet_planning.interfaces.env_manager.pose_transformation import get_dis
 from .primitives import distance_fn_from_extend_fn
 
 import time
-import sys
 import numpy as np
 
 __all__ = [
@@ -89,9 +88,6 @@ def smooth_path(path, extend_fn, collision_fn, distance_fn=None, cost_fn=None, s
         waypoints = path
 
     cost = compute_path_cost(waypoints, cost_fn=cost_fn)
-    print('[Before Smoothness]|Length {}'.format(len(waypoints)))
-    sys.stdout.flush()
-
     #paths = [extend_fn(*pair) for pair in get_pairs(waypoints)] # TODO: update incrementally
     #costs = [cost_fn(*pair) for pair in get_pairs(waypoints)]
     for iteration in irange(max_smooth_iterations):
