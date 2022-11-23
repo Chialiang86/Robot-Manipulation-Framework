@@ -34,10 +34,8 @@ def get_matrix_from_pos_rot(pos : list or tuple or np.ndarray, rot : list or tup
     pos_m = np.asarray(pos)
     if len(rot) == 3:
         rot_m = R.from_rotvec(rot).as_matrix()
-        # rot_m = np.asarray(p.getMatrixFromQuaternion(p.getQuaternionFromEuler(rot))).reshape((3, 3))
     elif len(rot) == 4: # x, y, z, w
         rot_m = R.from_quat(rot).as_matrix()
-        # rot_m = np.asarray(p.getMatrixFromQuaternion(rot)).reshape((3, 3))
     ret_m = np.identity(4)
     ret_m[:3, :3] = rot_m
     ret_m[:3, 3] = pos_m
@@ -64,6 +62,34 @@ def get_7d_pose_from_matrix(pose : np.ndarray):
     rot = R.from_matrix(pose[:3, :3]).as_quat()
     pose = list(pos) + list(rot)
     return pose
+
+def get_6d_pose_from_matrix(pose : np.ndarray):
+    assert pose.shape == (4, 4)
+    pos = pose[:3, 3]
+    rot = R.from_matrix(pose[:3, :3]).as_rotvec()
+    pose = list(pos) + list(rot)
+    return pose
+
+def get_dense_waypoints(start_config : list or tuple or np.ndarray, end_config : list or tuple or np.ndarray, resolution : float=0.005):
+
+    assert len(start_config) == 7 and len(end_config) == 7
+
+    d12 = np.asarray(end_config) - np.asarray(start_config)
+    d12_pos = d12[:3]
+    steps = int(np.ceil(np.linalg.norm(np.divide(d12, resolution), ord=2)))
+    obj_init_quat = quaternion.as_quat_array(xyzw2wxyz(start_config[3:]))
+    obj_tgt_quat = quaternion.as_quat_array(xyzw2wxyz(end_config[3:]))
+
+    ret = []
+    for step in range(steps):
+        ratio = (step + 1) / steps
+        pos = ratio * d12_pos + np.asarray(start_config[:3])
+        quat = quaternion.slerp_evaluate(obj_init_quat, obj_tgt_quat, ratio)
+        quat = wxyz2xyzw(quaternion.as_float_array(quat))
+        position7d = tuple(pos) + tuple(quat)
+        ret.append(position7d)
+
+    return ret
 
 def draw_coordinate(pose : np.ndarray or tuple or list, size : float = 0.1, color : np.ndarray=np.asarray([[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
     assert (type(pose) == np.ndarray and pose.shape == (4, 4)) or (len(pose) == 7)

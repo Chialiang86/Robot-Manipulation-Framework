@@ -1,4 +1,4 @@
-import os, copy, argparse, json, time, quaternion
+import os, copy, argparse, json, time
 import numpy as np
 import open3d as o3d
 from scipy.spatial.transform import Rotation as R
@@ -15,8 +15,8 @@ from pybullet_planning.motion_planners.rrt_connect import birrt
 from utils.bullet_utils import draw_coordinate, get_7d_pose_from_matrix, get_matrix_from_7d_pose, draw_bbox, get_robot_joint_info
 from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 
-# for custom IK 
-from kinematics import robot_dense_action
+# for your custom IK solver
+from ik import robot_dense_action
 
 SIM_TIMESTEP = 1.0 / 240
 
@@ -146,7 +146,7 @@ def render(width, height, view_matrix, projection_matrix, far=1000., near=0.01, 
     
     return rgb_buffer, depth_buffer
 
-def load_3d_kpts_from_depth(intrinsic, json_path, depth_path):
+def load_kpts_from_depth(intrinsic, json_path, depth_path):
     f = open(json_path, 'r')
     json_dict = json.load(f)
     f.close()
@@ -195,11 +195,11 @@ def web_annotator(obj_root_dir : str, port : int or str):
 def cross(a:np.ndarray,b:np.ndarray)->np.ndarray:
     return np.cross(a,b)
 
-def get_src2dst_transform_3kpt(src_3kpts_homo : np.ndarray, src_extrinsic : np.ndarray, 
+def get_src2dst_transform_from_kpts(src_3kpts_homo : np.ndarray, src_extrinsic : np.ndarray, 
                                dst_3kpts_homo : np.ndarray, dst_extrinsic : np.ndarray):
 
-    assert src_3kpts_homo.shape == (4, 3) and dst_3kpts_homo.shape == (4, 3), \
-                f'input array shape need to be (3, 3), but get {src_3kpts_homo.shape} and {dst_3kpts_homo.shape}'
+    assert src_3kpts_homo.shape[0] == 4 and dst_3kpts_homo.shape[0] == 4, \
+                f'input array shape need to be (4, N), but get {src_3kpts_homo.shape} and {dst_3kpts_homo.shape}'
     
     assert src_extrinsic.shape == (4, 4) and dst_extrinsic.shape == (4, 4), \
                 f'input array shape need to be (4, 4), but get {src_extrinsic.shape} and {dst_extrinsic.shape}'
@@ -229,12 +229,6 @@ def get_src2dst_transform_3kpt(src_3kpts_homo : np.ndarray, src_extrinsic : np.n
     transform[:3, 3] = t.reshape((1, 3))
 
     return transform
-
-def get_src2dst_transform_4kpt(src_4kpts : np.ndarray, dst_4kpts : np.ndarray):
-    assert src_4kpts.shape == (4, 4) and dst_4kpts.shape == (4, 4), \
-                f'input array shape need to be (4,4), but get {src_4kpts.shape} and {dst_4kpts.shape}'
-
-    return dst_4kpts @ np.linalg.inv(src_4kpts)
 
 def refine_obj_pose(physicsClientId, obj, original_pose, obstacles=[]):
     collision7d_fn = get_collision7d_fn(physicsClientId, obj, obstacles=obstacles)
@@ -357,16 +351,6 @@ def main(args):
     assert os.path.exists(urdf_path), f'{urdf_path} not exists'
     hook_id = p.loadURDF(urdf_path, [0.5, -0.1, 1.3], [0.0, 0.7071067811865475, 0.7071067811865476, 0.0])
 
-    # -------------------------------------------------------------------------------- #
-    # --- TODO: Read the task description                                          --- #
-    # --- Task 2 : Pose matching via N keypoints and find the target grasping /    --- #
-    # ---          hanging pose.                                                   --- #
-    # ---   - Task 2-1 : Pose matching using N keypoints via closed-form ICP       --- #
-    # ---                between 2 different pointclouds                           --- #
-    # ---   - Task 2-2 : Learn how to transform gripper poses to object pose or    --- #
-    # ---                vice versa                                                --- #
-    # -------------------------------------------------------------------------------- #
-
     # keypoint annotation using web keypoint annotator 
     # Github : https://github.com/luiscarlosgph/keypoint-annotation-tool
 
@@ -393,10 +377,6 @@ def main(args):
     init_json_path = f'{obj_output_dir}/rgb_init.json'
     hanging_json_path = f'{obj_output_dir}/rgb_hanging.json'
 
-    # f_hanging_pose = args.input_dir
-    # f = open(f_hanging_pose, 'r')
-    # hanging_pose_dict = json.load(f)
-    # src_gripper_trans = np.asarray(hanging_pose_dict["obj2gripper"])
     template_gripper_trans = np.asarray([
                             [ 0.98954677, -0.10356444,  0.10035739,  0.00496532],
                             [ 0.1071792 ,  0.06254209, -0.99227068,  0.03851797],
@@ -406,13 +386,8 @@ def main(args):
 
     repeat = True
     while repeat:
-        
-        # -------------------------------------------------------------------- #
-        # --- For Task 2-1                                                 --- #
-        # --- TODO: annotate some keypoints on images for pose matching by --- #
-        # ---       using the web annotator                                --- #
-        # --- Note : you don't need to add any code in this TODO           --- #
-        # -------------------------------------------------------------------- #
+
+        #######################################
 
         # remove old files
         os.system(f"rm {obj_output_dir}/*")
@@ -420,8 +395,6 @@ def main(args):
         # run web annotator
         port = 1234
         os.system(f'python3 web_annotator.py {input_dir} {port}')
-        # t = threading.Thread(target=web_annotator, args=(input_dir, port))
-        # t.start()
 
         while not os.path.exists(template_json_path) or \
               not os.path.exists(init_json_path) or \
@@ -429,7 +402,8 @@ def main(args):
             time.sleep(0.1)
 
         os.system(f"mv {obj_output_dir}/*.jpg {obj_input_dir}/")
-
+        
+        #######################################
 
         # template view RGB-D
         template_rgb_path = f'{obj_input_dir}/rgb_template.jpg'
@@ -455,33 +429,18 @@ def main(args):
         hanging_pcd = create_pcd_from_rgbd(hanging_rgb, hanging_depth, intrinsic, hanging_extrinsic, dscale=1)
 
         # get 3d keypoints relative to RGBD cameras from querying depth images using the annotated keypoints
-        template_3d_kpts = load_3d_kpts_from_depth(intrinsic, template_json_path, template_depth_path)
-        init_3d_kpts = load_3d_kpts_from_depth(intrinsic, init_json_path, init_depth_path)
-        hanging_3d_kpts = load_3d_kpts_from_depth(intrinsic, hanging_json_path, hanging_depth_path)
+        template_3d_kpts = load_kpts_from_depth(intrinsic, template_json_path, template_depth_path)
+        init_3d_kpts = load_kpts_from_depth(intrinsic, init_json_path, init_depth_path)
+        hanging_3d_kpts = load_kpts_from_depth(intrinsic, hanging_json_path, hanging_depth_path)
 
+        num_kpts = template_3d_kpts.shape[1]
+        template_3d_kpts_homo = np.vstack((template_3d_kpts, np.full((num_kpts,), 1.0)))
+        init_3d_kpts_homo = np.vstack((init_3d_kpts, np.full((num_kpts,), 1.0)))
+        template2init = get_src2dst_transform_from_kpts(template_3d_kpts_homo, template_extrinsic, init_3d_kpts_homo, init_extrinsic)
 
-        # -------------------------------------------------------------------- #
-        # --- For Task 2-1                                                 --- #
-        # --- TODO: use the annotated keypoints to find target mug poses.  --- #
-        # ---       Given camera intrinsic and two extrinsics of src and   --- #
-        # ---       dst camera, we need to find the pose of the mug in     --- #
-        # ---       world coordinate.                                      --- #
-        # -------------------------------------------------------------------- #
-
-        #### your code ####
-
-        # template2init = ? # a 4x4 transformation matrix (may be more than one line)
-        # template2hanging = ? # a 4x4 transformation matrix (may be more than one line)
-
-        template_3d_kpts_homo = np.vstack((template_3d_kpts, np.array([1.0, 1.0, 1.0])))
-        init_3d_kpts_homo = np.vstack((init_3d_kpts, np.array([1.0, 1.0, 1.0])))
-        template2init = get_src2dst_transform_3kpt(template_3d_kpts_homo, template_extrinsic, init_3d_kpts_homo, init_extrinsic)
-
-
-        template_3d_kpts_homo = np.vstack((template_3d_kpts, np.array([1.0, 1.0, 1.0])))
-        hanging_3d_kpts_homo = np.vstack((hanging_3d_kpts, np.array([1.0, 1.0, 1.0])))
-        template2hanging = get_src2dst_transform_3kpt(template_3d_kpts_homo, template_extrinsic, hanging_3d_kpts_homo, hanging_extrinsic)
-        
+        template_3d_kpts_homo = np.vstack((template_3d_kpts, np.full((num_kpts,), 1.0)))
+        hanging_3d_kpts_homo = np.vstack((hanging_3d_kpts, np.full((num_kpts,), 1.0)))
+        template2hanging = get_src2dst_transform_from_kpts(template_3d_kpts_homo, template_extrinsic, hanging_3d_kpts_homo, hanging_extrinsic)
 
         template_tran = np.linalg.inv(init_extrinsic) @ template2init @ template_extrinsic @ template_3d_kpts_homo
         for i in range(template_tran.shape[1]):
@@ -494,8 +453,6 @@ def main(args):
             print('template2hanging result : {} <-> {} error = {}'.format(
                 hanging_tran[:,i], hanging_3d_kpts_homo[:, i], np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2))
             )
-
-        ####################
         
         # template and initial view point cloud before and after alignment
         o3d.visualization.draw_geometries([coor, template_pcd, init_pcd])
@@ -509,18 +466,6 @@ def main(args):
         template2hanging_pcd.transform(template2hanging)
         o3d.visualization.draw_geometries([coor, template2hanging_pcd, hanging_pcd])
 
-        # -------------------------------------------------------------------- #
-        # --- For Task 2-2                                                 --- #
-        # --- TODO: compute the target grasping poses via the mug poses    --- #
-        # ---       and the given template grasping pose using Forward     --- #
-        # ---       Kinematic (see variable `template_gripper_trans`)      --- #
-        # -------------------------------------------------------------------- #
-
-        #### your code ####
-
-        # init_grasping_pose = ? (may be more than one line)
-        # hanging_gripper_pose = ? (may be more than one line)
-
         # grasping pose
         gripper_grasping_trans = template2init @ template_gripper_trans
         gripper_grasping_pose = get_7d_pose_from_matrix(gripper_grasping_trans)
@@ -528,8 +473,6 @@ def main(args):
         # hanging pose
         gripper_hanging_trans = template2hanging @ template_gripper_trans
         gripper_hanging_pose = get_7d_pose_from_matrix(gripper_hanging_trans)
-
-        ####################
 
         # checkpoint, repeat if repeat (pressing n) 
         repeat = checkpoint(1, 'After finishing pose matching and grasping pose finding, let\'s grasp the mug')
@@ -584,10 +527,10 @@ def main(args):
     gripper_key_pose = copy.copy(gripper_hanging_pose)
     gripper_key_pose[1] += 0.1
     gripper_key_pose[2] += 0.02
-    print(f'keypose : {gripper_key_pose}')
     draw_coordinate(gripper_key_pose)
     robot_dense_action(robot, obj_id, gripper_grasping_pose, gripper_key_pose, grasp=True, resolution=action_resolution)
     
+    print(f'keypose : {gripper_key_pose}')
     # record current object pose
     obj_pos, obj_rot = p.getBasePositionAndOrientation(obj_id)
     key_obj_pose = obj_pos + obj_rot
@@ -600,23 +543,8 @@ def main(args):
     # --- Hanging --- #
     # --------------- #
 
-    # -------------------------------------------------------------------- #
-    # --- For Task 2-2                                                 --- #
-    # --- TODO: `gripper_key_pose` is the pose for the gripper.        --- #
-    # ---       However, we will apply object pose for computing RRT-  --- #
-    # ---       connect algorithm, so we need to transform the         --- #
-    # ---       `gripper_key_pose` to `obj_start_pose` using Forward   --- #
-    # ---       Kinematic (see variable `template_gripper_trans`)      --- #
-    # -------------------------------------------------------------------- #
-
-    #### your code ####
-
-    # obj_start_pose = ? (may be more than one line)
-
     gripper_key_trans = get_matrix_from_7d_pose(gripper_key_pose)
     obj_start_pose = get_7d_pose_from_matrix(gripper_key_trans @ np.linalg.inv(template_gripper_trans))
-
-    ###################
 
     # avoid collision in initial checking
     obstacles=[hook_id, table_id]
@@ -630,25 +558,12 @@ def main(args):
         print("Oops, no solution!")
         return
 
-    # -------------------------------------------------------------------- #
-    # --- For Task 2-2                                                 --- #
-    # --- TODO: transform the waypoints of the mug to the waypoints    --- #
-    # ---       of the gripper via Forward Kinematic (see variable     --- #
-    # ---       `template_gripper_trans`)                              --- #
-    # -------------------------------------------------------------------- #
-
     gripper_waypoints = []
-
-    #### your code ####
-
-    # gripper_waypoints = ? (may be more than one line)
 
     for obj_waypoint in obj_waypoints:
         obj_trans = get_matrix_from_7d_pose(obj_waypoint)
         gripper_waypoint = get_7d_pose_from_matrix(obj_trans @ template_gripper_trans)
         gripper_waypoints.append(gripper_waypoint)
-
-    ###################
 
     # reset obj pose and execute the gripper waypoints for hanging
     p.resetBasePositionAndOrientation(obj_id, key_obj_pose[:3], key_obj_pose[3:])
@@ -664,7 +579,7 @@ def main(args):
     # execution step 4 : go to the ending pose
     gripper_pose = gripper_waypoints[-1]
     gripper_rot_matrix = R.from_quat(gripper_pose[3:]).as_matrix()
-    gripper_ending_pos = np.asarray(gripper_pose[:3]) + (gripper_rot_matrix @ np.array([[0], [0], [-0.05]])).reshape(3)
+    gripper_ending_pos = np.asarray(gripper_pose[:3]) + (gripper_rot_matrix @ np.array([[0], [0], [-0.15]])).reshape(3)
     gripper_ending_pose = tuple(gripper_ending_pos) + tuple(gripper_pose[3:])
     robot_dense_action(robot, obj_id, gripper_pose, gripper_ending_pose, grasp=False, resolution=action_resolution)
 
@@ -674,6 +589,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input-dir', '-i', type=str, default='data/mug-Hook_skew')
+    parser.add_argument('--input-dir', '-i', type=str, default='data/mug-Hook_60')
     args = parser.parse_args()
     main(args)

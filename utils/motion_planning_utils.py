@@ -68,21 +68,6 @@ def get_extend7d_fn(resolution = 0.001):
     def extend7d_fn(q1, q2):
         assert len(q1) == 7 and len(q2) == 7
 
-        # q1_pos = np.asarray(q1[:3])
-        # q2_pos = np.asarray(q2[:3])
-        # q1_rot = np.asarray(q1[3:])
-        # q2_rot = np.asarray(q2[3:])
-
-        # d12 = q2_pos - q1_pos
-
-        # r12_rotvec = R.from_quat(q2_rot).as_rotvec() - R.from_quat(q1_rot).as_rotvec()
-
-        # r12 = np.linalg.inv(R.from_quat(q1_rot).as_matrix()) @ R.from_quat(q2_rot).as_matrix() # from R1 -> R2
-        # r12_rotvec = R.from_matrix(r12).as_rotvec()
-
-        # diff_q1_q2 = np.concatenate((d12, r12_rotvec))
-        # steps = int(np.ceil(np.linalg.norm(np.divide(diff_q1_q2, resolution), ord=2)))
-
         d12 = np.asarray(q2[:3]) - np.asarray(q1[:3])
         r12 = np.asarray(q2[3:]) - np.asarray(q1[3:])
         diff_q1_q2 = np.concatenate((d12, r12))
@@ -99,19 +84,7 @@ def get_extend7d_fn(resolution = 0.001):
             quat = wxyz2xyzw(quaternion.as_float_array(quat))
             positions7d = tuple(pos) + tuple(quat)
 
-            # positions6d = (i + 1) / steps * diff_q1_q2 + np.concatenate((q1_pos, R.from_quat(q1_rot).as_rotvec()))
-            # positions7d = tuple(positions6d[:3]) + tuple(R.from_rotvec(positions6d[3:]).as_quat())
             yield positions7d
-
-        # # testing code
-        # diff_quat = p.getDifferenceQuaternion(q1[3:], q2[3:])
-        # diff_rotvec = R.from_quat(diff_quat).as_rotvec()
-        # print('diff = {}'.format(r12_as_rotvec))
-
-        # # rotmat = R.from_quat(diff_quat).as_matrix()
-        # rotmat1 = R.from_quat(q1[3:]).as_matrix()
-        # rotmat2 = R.from_quat(q2[3:]).as_matrix()
-        # print('{} = {}'.format(rotmat1 @ r12, rotmat2))
     
     return extend7d_fn
 
