@@ -216,15 +216,19 @@ def main():
 
     close_flag = False
     param_control = True
-    testcase_max = 1000
-    # max_cnt = 3
-    # cnt = 0
 
     joint_poses_old = [0, 0, 0, 0, 0, 0, 0]
 
+    fk_testcase_max = 0
     fk_dict = {
         'joint_poses': [],
         'poses': []
+    }
+
+    ik_testcase_max = 101
+    ik_dict = {
+        'current_joint_poses': [],
+        'next_poses': []
     }
 
     while True:
@@ -261,19 +265,30 @@ def main():
                 gripper_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[5]
                 gripper_pose = list(gripper_pos) + list(gripper_rot)
 
-                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > 0.1:
-                    # print(f'joint_poses = {joint_poses}, gripper_pose = {gripper_pose}')
-                    fk_dict['joint_poses'].append(joint_poses)
-                    fk_dict['poses'].append(gripper_pose)
-                    joint_poses_old = joint_poses
+                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > 0.2:
 
-                    testcase_num = len(fk_dict['joint_poses'])
-                    print(f'testcase num = {testcase_num} / {testcase_max}')
-                    if testcase_num == 1000:
-                        f = open('fk_testcase.json', 'w')
-                        json.dump(fk_dict, f, indent=4)
+                    # fk_dict['joint_poses'].append(joint_poses)
+                    # fk_dict['poses'].append(gripper_pose)
+                    # fk_testcase_num = len(fk_dict['joint_poses'])
+                    # if fk_testcase_num == fk_testcase_max:
+                    #     f = open('fk_testcase.json', 'w')
+                    #     json.dump(fk_dict, f, indent=4)
+                    #     f.close()
+                    #     break
+                    
+                    ik_dict['current_joint_poses'].append(joint_poses_old)
+                    ik_dict['next_poses'].append(gripper_pose)
+                    ik_testcase_num = len(ik_dict['current_joint_poses'])
+                    print(f'fk testcase num = {ik_testcase_num - 1} / {ik_testcase_max - 1}')
+                    if ik_testcase_num == ik_testcase_max:
+                        ik_dict['current_joint_poses'] = ik_dict['current_joint_poses'][1:]
+                        ik_dict['next_poses'] = ik_dict['next_poses'][1:]
+                        f = open('ik_testcase.json', 'w')
+                        json.dump(ik_dict, f, indent=4)
                         f.close()
                         break
+
+                    joint_poses_old = joint_poses
 
 
         elif param_control:

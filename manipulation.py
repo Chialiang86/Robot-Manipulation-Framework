@@ -1,12 +1,12 @@
-import os, copy, argparse, json, time
-import numpy as np
+import os, copy, argparse, json, time, cv2
 import open3d as o3d
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 from PIL import Image
 import pybullet as p
 import pybullet_data
 
-# for motion planning
+# for RRT-Connect motion planning
 from utils.motion_planning_utils import get_sample7d_fn, get_distance7d_fn, get_extend7d_fn, get_collision7d_fn
 from pybullet_planning.interfaces.planner_interface.joint_motion_planning import check_initial_end
 from pybullet_planning.motion_planners.rrt_connect import birrt
@@ -19,6 +19,15 @@ from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 from ik import robot_dense_action
 
 SIM_TIMESTEP = 1.0 / 240
+
+def print_log(msg : str='', state : int=0):
+    state = 0 if (state > 2 or state < 0) else state
+    prefix = {
+        0: 'INFORMATION',
+        1: 'WARNNING',
+        2: 'ERROR'
+    }[state]
+    print(f'[{prefix}: {msg}]')
 
 def get_cam_params(info_dict : dict, cam_param : dict):
     assert 'template_extrinsic' in info_dict.keys() and \
@@ -99,6 +108,24 @@ def randomize_standing_pose(base_pos, base_rot):
     target_rot =R.from_rotvec(target_rot).as_quat()
     return list(target_pos), list(target_rot)
 
+def click_event(event, x, y, flags, params):
+
+    # checking for left mouse clicks
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print_log(f'keypoint = ({x} {y})')
+        if state == 0:
+            template_3d_kpts.append([x, y])
+            cv2.circle(template_rgb_copy, (x, y), 3, (0, 0, 255), -1)
+            cv2.imshow('template_rgb', template_rgb_copy)
+        elif state == 1:
+            init_3d_kpts.append([x, y])
+            cv2.circle(init_rgb_copy, (x, y), 3, (0, 0, 255), -1)
+            cv2.imshow('init_rgb', init_rgb_copy)
+        elif state == 2:
+            hanging_3d_kpts.append([x, y])
+            cv2.circle(hanging_rgb_copy, (x, y), 3, (0, 0, 255), -1)
+            cv2.imshow('hanging_rgb', hanging_rgb_copy)
+
 def create_pcd_from_rgbd(rgb, depth, intr, extr, dscale, depth_threshold=2.0):
     assert rgb.shape[:2] == depth.shape, f'{rgb.shape[:2]} != {depth.shape}'
     (h, w) = depth.shape
@@ -146,14 +173,13 @@ def render(width, height, view_matrix, projection_matrix, far=1000., near=0.01, 
     
     return rgb_buffer, depth_buffer
 
-def load_kpts_from_depth(intrinsic, json_path, depth_path):
-    f = open(json_path, 'r')
-    json_dict = json.load(f)
-    f.close()
+def load_kpts_from_depth(intrinsic : list or np.ndarray, keypoints : list or np.ndarray, depth_path : str):
 
     # load keypoints
-    kpts_x = np.array([ele["x"] for ele in json_dict["tooltips"]])
-    kpts_y = np.array([ele["y"] for ele in json_dict["tooltips"]])
+    if type(keypoints) == list :
+        keypoints = np.asarray(keypoints)
+    kpts_x = np.array(keypoints[:,0])
+    kpts_y = np.array(keypoints[:,1])
     kpts_rc = (kpts_y, kpts_x)
 
     depth = np.load(depth_path)
@@ -174,8 +200,8 @@ def load_kpts_from_depth(intrinsic, json_path, depth_path):
     return kpts_3d
 
 def checkpoint(num : int, msg  : str):
-    print(f"[checkpoint {num} : {msg}")
-    print("press y on PyBullet GUI to continue or press n on PyBullet GUI to redo ...")
+    print_log(f"checkpoint {num} : {msg}")
+    print_log("press y on PyBullet GUI to continue or press n on PyBullet GUI to redo ...")
     repeat = False
     while True:
         # key callback
@@ -220,7 +246,7 @@ def get_src2dst_transform_from_kpts(src_3kpts_homo : np.ndarray, src_extrinsic :
 
     # SVD : reflective issue https://medium.com/machine-learning-world/linear-algebra-points-matching-with-svd-in-3d-space-2553173e8fed
     if np.linalg.det(R) < 0:
-        print('fix reflective issue')
+        print_log('fix reflective issue')
         R[:, 2] *= -1
     t = dst_mean - R @ src_mean
 
@@ -357,25 +383,40 @@ def main(args):
     # randomly initialize the pose of the object
     standing_pos, standing_rot = randomize_standing_pose(base_pos=[0.35, 0.1, 0.76], base_rot=[np.pi / 2, 0, 0])
     p.resetBasePositionAndOrientation(obj_id, standing_pos, standing_rot)
-
+    
+    # keypoint list
+    global state
+    global template_3d_kpts
+    global init_3d_kpts
+    global hanging_3d_kpts
+    global template_rgb_copy
+    global init_rgb_copy
+    global hanging_rgb_copy
+    
     # render init RGB-D
-    obj_input_dir = f'{input_dir}/input'
-    obj_output_dir = f'{input_dir}/output'
     init_rgb, init_depth = render(width, height, view_matrix, projection_matrix, 
                                         far=far, near=near, obj_id=obj_id)
     
-    # save rgb-d to files
+    # save init view RGB-D to files
     init_rgb_img = Image.fromarray(init_rgb)
-    init_rgb_path = f'{obj_input_dir}/rgb_init.jpg'
+    init_rgb_path = f'{input_dir}/rgb_init.jpg'
     init_rgb_img.save(init_rgb_path)
 
-    init_depth_path = f'{obj_input_dir}/depth_init.npy'
+    init_depth_path = f'{input_dir}/depth_init.npy'
     np.save(init_depth_path, init_depth)
 
-    # 2d keypoints information will be save to these json
-    template_json_path = f'{obj_output_dir}/rgb_template.json'
-    init_json_path = f'{obj_output_dir}/rgb_init.json'
-    hanging_json_path = f'{obj_output_dir}/rgb_hanging.json'
+    # template view RGB-D
+    template_rgb_path = f'{input_dir}/rgb_template.jpg'
+    template_rgb = np.asarray(Image.open(template_rgb_path))
+    template_depth_path = f'{input_dir}/depth_template.npy'
+    template_depth = np.load(template_depth_path)
+
+    # hanging view RGB-D
+    hanging_rgb_path = f'{input_dir}/rgb_hanging.jpg'
+    hanging_rgb = np.asarray(Image.open(hanging_rgb_path))
+    hanging_depth_path = f'{input_dir}/depth_hanging.npy'
+    hanging_depth = np.load(hanging_depth_path)
+
 
     template_gripper_trans = np.asarray([
                             [ 0.98954677, -0.10356444,  0.10035739,  0.00496532],
@@ -385,37 +426,46 @@ def main(args):
                         ])
 
     repeat = True
+
     while repeat:
 
-        #######################################
-
-        # remove old files
-        os.system(f"rm {obj_output_dir}/*")
-
-        # run web annotator
-        port = 1234
-        os.system(f'python3 web_annotator.py {input_dir} {port}')
-
-        while not os.path.exists(template_json_path) or \
-              not os.path.exists(init_json_path) or \
-              not os.path.exists(hanging_json_path):
-            time.sleep(0.1)
-
-        os.system(f"mv {obj_output_dir}/*.jpg {obj_input_dir}/")
+        # keypoint annotation for template image
+        print_log('please annotate several keypoints on template_rgb for template pose matching')
+        state = 0
+        template_3d_kpts = []
+        template_rgb_copy = template_rgb.copy()
+        cv2.imshow('template_rgb', template_rgb_copy)
+        cv2.setMouseCallback('template_rgb', click_event)
+        while len(template_3d_kpts) == 0:
+            cv2.waitKey(0)
+            if len(template_3d_kpts) == 0:
+                print_log('please annotate at least one keypoint!!!', 1)
         
-        #######################################
+        # keypoint annotation for initial pose
+        print_log('please annotate several keypoints on init_rgb for template pose matching')
+        state = 1
+        init_3d_kpts = []
+        init_rgb_copy = init_rgb.copy()
+        cv2.imshow('init_rgb', init_rgb_copy)
+        cv2.setMouseCallback('init_rgb', click_event)
+        while len(init_3d_kpts) == 0:
+            cv2.waitKey(0)
+            if len(init_3d_kpts) == 0:
+                print_log('please annotate at least one keypoint!!!', 1)
 
-        # template view RGB-D
-        template_rgb_path = f'{obj_input_dir}/rgb_template.jpg'
-        template_rgb = np.asarray(Image.open(template_rgb_path))
-        template_depth_path = f'{obj_input_dir}/depth_template.npy'
-        template_depth = np.load(template_depth_path)
+        # keypoint annotation for target pose
+        print_log('please annotate several keypoints on hanging_rgb for template pose matching')
+        state = 2
+        hanging_3d_kpts = []
+        hanging_rgb_copy = hanging_rgb.copy()
+        cv2.imshow('hanging_rgb', hanging_rgb_copy)
+        cv2.setMouseCallback('hanging_rgb', click_event)
+        while len(hanging_3d_kpts) == 0:
+            cv2.waitKey(0)
+            if len(hanging_3d_kpts) == 0:
+                print_log('please annotate at least one keypoint!!!', 1)
 
-        # hanging view RGB-D
-        hanging_rgb_path = f'{obj_input_dir}/rgb_hanging.jpg'
-        hanging_rgb = np.asarray(Image.open(hanging_rgb_path))
-        hanging_depth_path = f'{obj_input_dir}/depth_hanging.npy'
-        hanging_depth = np.load(hanging_depth_path)
+        cv2.destroyAllWindows()
 
         # before matching
         coor = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
@@ -429,9 +479,9 @@ def main(args):
         hanging_pcd = create_pcd_from_rgbd(hanging_rgb, hanging_depth, intrinsic, hanging_extrinsic, dscale=1)
 
         # get 3d keypoints relative to RGBD cameras from querying depth images using the annotated keypoints
-        template_3d_kpts = load_kpts_from_depth(intrinsic, template_json_path, template_depth_path)
-        init_3d_kpts = load_kpts_from_depth(intrinsic, init_json_path, init_depth_path)
-        hanging_3d_kpts = load_kpts_from_depth(intrinsic, hanging_json_path, hanging_depth_path)
+        template_3d_kpts = load_kpts_from_depth(intrinsic, template_3d_kpts, template_depth_path)
+        init_3d_kpts = load_kpts_from_depth(intrinsic, init_3d_kpts, init_depth_path)
+        hanging_3d_kpts = load_kpts_from_depth(intrinsic, hanging_3d_kpts, hanging_depth_path)
 
         num_kpts = template_3d_kpts.shape[1]
         template_3d_kpts_homo = np.vstack((template_3d_kpts, np.full((num_kpts,), 1.0)))
@@ -442,17 +492,17 @@ def main(args):
         hanging_3d_kpts_homo = np.vstack((hanging_3d_kpts, np.full((num_kpts,), 1.0)))
         template2hanging = get_src2dst_transform_from_kpts(template_3d_kpts_homo, template_extrinsic, hanging_3d_kpts_homo, hanging_extrinsic)
 
-        template_tran = np.linalg.inv(init_extrinsic) @ template2init @ template_extrinsic @ template_3d_kpts_homo
-        for i in range(template_tran.shape[1]):
-            print('template2init result : {} <-> {} error = {}'.format(
-                template_tran[:,i], init_3d_kpts_homo[:, i], np.linalg.norm(template_tran[:,i] - init_3d_kpts_homo[:, i], ord=2))
-            )
+        # template_tran = np.linalg.inv(init_extrinsic) @ template2init @ template_extrinsic @ template_3d_kpts_homo
+        # for i in range(template_tran.shape[1]):
+        #     print_log('template2init result : {} <-> {} error = {}'.format(
+        #         template_tran[:,i], init_3d_kpts_homo[:, i], np.linalg.norm(template_tran[:,i] - init_3d_kpts_homo[:, i], ord=2))
+        #     )
 
-        hanging_tran = np.linalg.inv(hanging_extrinsic) @ template2hanging @ template_extrinsic @ template_3d_kpts_homo
-        for i in range(template_tran.shape[1]):
-            print('template2hanging result : {} <-> {} error = {}'.format(
-                hanging_tran[:,i], hanging_3d_kpts_homo[:, i], np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2))
-            )
+        # hanging_tran = np.linalg.inv(hanging_extrinsic) @ template2hanging @ template_extrinsic @ template_3d_kpts_homo
+        # for i in range(template_tran.shape[1]):
+        #     print_log('template2hanging result : {} <-> {} error = {}'.format(
+        #         hanging_tran[:,i], hanging_3d_kpts_homo[:, i], np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2))
+        #     )
         
         # template and initial view point cloud before and after alignment
         o3d.visualization.draw_geometries([coor, template_pcd, init_pcd])
@@ -475,7 +525,7 @@ def main(args):
         gripper_hanging_pose = get_7d_pose_from_matrix(gripper_hanging_trans)
 
         # checkpoint, repeat if repeat (pressing n) 
-        repeat = checkpoint(1, 'After finishing pose matching and grasping pose finding, let\'s grasp the mug')
+        repeat = checkpoint(1, '[After finishing pose matching and grasping pose finding, let\'s grasp the mug]')
 
     # ------------------- #
     # --- Setup robot --- #
@@ -504,7 +554,7 @@ def main(args):
     robot_dense_action(robot, obj_id, gripper_start_pose, gripper_prepare_pose, grasp=False, resolution=action_resolution)
 
     joint_names, joint_poses, joint_types = get_robot_joint_info(robot.robot_id)
-    print(joint_poses)
+    # print_log(joint_poses)
 
     # ---------------- #
     # --- Grasping --- #
@@ -530,7 +580,7 @@ def main(args):
     draw_coordinate(gripper_key_pose)
     robot_dense_action(robot, obj_id, gripper_grasping_pose, gripper_key_pose, grasp=True, resolution=action_resolution)
     
-    print(f'keypose : {gripper_key_pose}')
+    # print_log(f'keypose : {gripper_key_pose}')
     # record current object pose
     obj_pos, obj_rot = p.getBasePositionAndOrientation(obj_id)
     key_obj_pose = obj_pos + obj_rot
@@ -555,7 +605,7 @@ def main(args):
     obj_waypoints = rrt_connect_7d(physics_client_id, obj_id, start_conf=obj_start_pose, target_conf=obj_end_pose, obstacles=obstacles)
 
     if obj_waypoints is None:
-        print("Oops, no solution!")
+        print_log("Oops, no solution!", 2)
         return
 
     gripper_waypoints = []
@@ -583,9 +633,14 @@ def main(args):
     gripper_ending_pose = tuple(gripper_ending_pos) + tuple(gripper_pose[3:])
     robot_dense_action(robot, obj_id, gripper_pose, gripper_ending_pose, grasp=False, resolution=action_resolution)
 
-    joint_names, joint_poses, joint_types = get_robot_joint_info(robot.robot_id)
-    for i in range(len(joint_names)):
-        print(f'{joint_names[i]} position={joint_poses[i]} type={joint_types[i]}')
+    print_log('process completed')
+    for _ in range(int(1 / SIM_TIMESTEP * 3)): 
+        p.stepSimulation()
+        time.sleep(SIM_TIMESTEP)
+
+    # joint_names, joint_poses, joint_types = get_robot_joint_info(robot.robot_id)
+    # for i in range(len(joint_names)):
+    #     print_log(f'{joint_names[i]} position={joint_poses[i]} type={joint_types[i]}')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

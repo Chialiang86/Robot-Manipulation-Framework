@@ -79,16 +79,6 @@ class pandaEnv:
 
         self.ll, self.ul, self.jr, self.rs = self.get_joint_ranges()
 
-        # if self._use_IK:
-
-        #     self._home_hand_pose = [0.2, 0.0, 0.8,
-        #                             min(m.pi, max(-m.pi, m.pi)),
-        #                             min(m.pi, max(-m.pi, 0)),
-        #                             min(m.pi, max(-m.pi, 0))]
-
-        #     self.apply_action(self._home_hand_pose)
-        #     p.stepSimulation(physicsClientId=self._physics_client_id)
-
     def get_joint_name_ids(self):
         return self._joint_name_to_ids
 
@@ -114,33 +104,6 @@ class pandaEnv:
             # print(f'{joint_name}: {ll} - {ul}')
 
         return lower_limits, upper_limits, joint_ranges, rest_poses
-
-    # def get_action_dim(self):
-    #     if not self._use_IK:
-    #         return self.joint_action_space
-
-    #     if self._control_orientation and self._control_eu_or_quat is 0:
-    #         return 6  # position x,y,z + roll/pitch/yaw of hand frame
-
-    #     elif self._control_orientation and self._control_eu_or_quat is 1:
-    #         return 7  # position x,y,z + quat of hand frame
-
-    #     return 3  # position x,y,z
-
-    # def get_observation_dim(self):
-    #     return len(self.get_observation())
-
-    # def get_workspace(self):
-    #     return [i[:] for i in self._workspace_lim]
-
-    # def set_workspace(self, ws):
-    #     self._workspace_lim = [i[:] for i in ws]
-
-    # def get_rotation_lim(self):
-    #     return [i[:] for i in self._eu_lim]
-
-    # def set_rotation_lim(self, eu):
-    #     self._eu_lim = [i[:] for i in eu]
 
     def pre_grasp(self):
         self.apply_action_fingers([0.03, 0.03])
@@ -229,9 +192,6 @@ class pandaEnv:
                                                     maxNumIterations=500,
                                                     residualThreshold=.001,
                                                     physicsClientId=self._physics_client_id)
-        
-        # jointPoses = pybullet_ik(self._physics_client_id, self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
-        #                         maxNumIterations=500, residualThreshold=.001)
 
         # --- set joint control --- #
         p.setJointMotorControlArray(bodyUniqueId=self.robot_id,
@@ -241,16 +201,6 @@ class pandaEnv:
                                     positionGains=[0.2] * len(jointPoses),
                                     velocityGains=[1] * len(jointPoses),
                                     physicsClientId=self._physics_client_id)
-
-    # def check_collision(self, obj_id):
-    #     # check if there is any collision with an object
-
-    #     contact_pts = p.getContactPoints(obj_id, self.robot_id, physicsClientId=self._physics_client_id)
-
-    #     # check if the contact is on the fingertip(s)
-    #     n_fingertips_contact, _ = self.check_contact_fingertips(obj_id)
-
-    #     return (len(contact_pts) - n_fingertips_contact) > 0
 
     def check_contact_fingertips(self, obj_id):
         # check if there is any contact on the internal part of the fingers, to control if they are correctly touching an object
@@ -324,47 +274,3 @@ class pandaEnv:
         p.addUserDebugLine([0, 0, 0], [0, 0, 0.1], [0, 0, 1], parentObjectUniqueId=self.robot_id,
                            parentLinkIndex=self.end_eff_idx, physicsClientId=self._physics_client_id)
     
-
-    # def apply_rotation_fingers(self, action):
-    #     idx_fingers = [self._joint_name_to_ids['panda_finger_joint1'], self._joint_name_to_ids['panda_finger_joint2']]
-
-    # def get_target_joint_conf(self, action):
-    #     if not (len(action) == 3 or len(action) == 6 or len(action) == 7):
-    #         raise AssertionError('number of action commands must be \n- 3: (dx,dy,dz)'
-    #                                 '\n- 6: (dx,dy,dz,droll,dpitch,dyaw)'
-    #                                 '\n- 7: (dx,dy,dz,qx,qy,qz,w)'
-    #                                 '\ninstead it is: ', len(action))
-
-    #     # --- Constraint end-effector pose inside the workspace --- #
-    #     dx, dy, dz = action[:3]
-    #     new_pos = [dx, dy,
-    #                 min(self._workspace_lim[2][1], max(self._workspace_lim[2][0], dz))]
-
-    #     # if orientation is not under control, keep it fixed
-    #     if not self._control_orientation:
-    #         new_quat_orn = p.getQuaternionFromEuler(self._home_hand_pose[3:6])
-
-    #     # otherwise, if it is defined as euler angles
-    #     elif len(action) == 6:
-    #         droll, dpitch, dyaw = action[3:]
-
-    #         eu_orn = [min(m.pi, max(-m.pi, droll)),
-    #                     min(m.pi, max(-m.pi, dpitch)),
-    #                     min(m.pi, max(-m.pi, dyaw))]
-
-    #         new_quat_orn = p.getQuaternionFromEuler(eu_orn)
-
-    #     # otherwise, if it is define as quaternion
-    #     elif len(action) == 7:
-    #         new_quat_orn = action[3:7]
-
-    #     # otherwise, use current orientation
-    #     else:
-    #         new_quat_orn = p.getLinkState(self.robot_id, self.end_eff_idx, physicsClientId=self._physics_client_id)[5]
-
-    #     # --- compute joint positions with IK --- #
-    #     jointPoses = p.calculateInverseKinematics(self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
-    #                                                 maxNumIterations=100,
-    #                                                 residualThreshold=.001,
-    #                                                 physicsClientId=self._physics_client_id)
-    #     return jointPoses # without gripper

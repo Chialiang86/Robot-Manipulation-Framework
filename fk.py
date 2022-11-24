@@ -1,7 +1,6 @@
 import time, os, argparse, json
 import numpy as np
 
-from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
 
 # for simulator
@@ -12,10 +11,11 @@ import pybullet_data
 from utils.bullet_utils import draw_coordinate, get_matrix_from_7d_pose, get_7d_pose_from_matrix
 
 SIM_TIMESTEP = 1.0 / 240.0
-JACOBIAN_SCORE_MAX = 10.0
+JACOBIAN_SCORE_MAX = 15.0
 JACOBIAN_ERROR_THRESH = 0.05
-FK_SCORE_MAX = 10.0
+FK_SCORE_MAX = 15.0
 FK_ERROR_THRESH = 0.005
+TASK1_SCORE_MAX = JACOBIAN_SCORE_MAX + FK_SCORE_MAX
 
 def cross(a : np.ndarray, b : np.ndarray) -> np.ndarray :
     return np.cross(a, b)
@@ -111,62 +111,72 @@ def your_fk(robot, DH_params : dict, q : list or tuple or np.ndarray) -> np.ndar
 
     return pose_7d, jacobian
 
-def score_ik(robot, testcase_file : str, visualize : bool=False):
+def score_fk(robot, testcase_files : str, visualize : bool=False):
 
+    testcase_file_num = len(testcase_files)
     dh_params = get_panda_DH_params()
+    fk_score = [FK_SCORE_MAX / testcase_file_num for _ in range(testcase_file_num)]
+    fk_error_cnt = [0 for _ in range(testcase_file_num)]
+    jacobian_score = [JACOBIAN_SCORE_MAX / testcase_file_num for _ in range(testcase_file_num)]
+    jacobian_error_cnt = [0 for _ in range(testcase_file_num)]
 
-    f_in = open(testcase_file, 'r')
-    fk_dict = json.load(f_in)
-    f_in.close()
+    difficulty = ['easy  ', 'normal', 'hard  ', 'devil']
 
-    joint_poses = fk_dict['joint_poses']
-    poses = fk_dict['poses']
-    jacobians = fk_dict['jacobian']
-    cases_num = len(fk_dict['joint_poses'])
+    print("============================ Task 1 : Forward Kinematic ============================")
+    for file_id, testcase_file in enumerate(testcase_files):
 
-    fk_score = FK_SCORE_MAX
-    fk_error_cnt = 0
-    jacobian_score = JACOBIAN_SCORE_MAX
-    jacobian_error_cnt = 0
+        f_in = open(testcase_file, 'r')
+        fk_dict = json.load(f_in)
+        f_in.close()
 
-    penalty = 100.0 / cases_num
+        joint_poses = fk_dict['joint_poses']
+        poses = fk_dict['poses']
+        jacobians = fk_dict['jacobian']
+        cases_num = len(fk_dict['joint_poses'])
 
-    for i in tqdm(range(cases_num)):
-        your_pose, your_jacobian = your_fk(robot, dh_params, joint_poses[i])
-        gt_pose = poses[i]
+        penalty = TASK1_SCORE_MAX / cases_num
 
-        if visualize :
-            color_yours = [[1,0,0], [1,0,0], [1,0,0]]
-            color_gt = [[0,1,0], [0,1,0], [0,1,0]]
-            draw_coordinate(your_pose, size=0.01, color=color_yours)
-            draw_coordinate(gt_pose, size=0.01, color=color_gt)
+        for i in range(cases_num):
+            your_pose, your_jacobian = your_fk(robot, dh_params, joint_poses[i])
+            gt_pose = poses[i]
 
-        fk_error = np.linalg.norm(your_pose - np.asarray(gt_pose), ord=2)
-        if fk_error > FK_ERROR_THRESH:
-            fk_score -= penalty
-            fk_error_cnt += 1
+            if visualize :
+                color_yours = [[1,0,0], [1,0,0], [1,0,0]]
+                color_gt = [[0,1,0], [0,1,0], [0,1,0]]
+                draw_coordinate(your_pose, size=0.01, color=color_yours)
+                draw_coordinate(gt_pose, size=0.01, color=color_gt)
 
-        jacobian_error = np.linalg.norm(your_jacobian - np.asarray(jacobians[i]), ord=2)
-        if jacobian_error > JACOBIAN_ERROR_THRESH:
-            jacobian_score -= penalty
-            jacobian_error_cnt += 1
+            fk_error = np.linalg.norm(your_pose - np.asarray(gt_pose), ord=2)
+            if fk_error > FK_ERROR_THRESH:
+                fk_score[file_id] -= penalty
+                fk_error_cnt[file_id] += 1
+
+            jacobian_error = np.linalg.norm(your_jacobian - np.asarray(jacobians[i]), ord=2)
+            if jacobian_error > JACOBIAN_ERROR_THRESH:
+                jacobian_score[file_id] -= penalty
+                jacobian_error_cnt[file_id] += 1
+        
+        fk_score[file_id] = 0.0 if fk_score[file_id] < 0.0 else fk_score[file_id]
+        jacobian_score[file_id] = 0.0 if jacobian_score[file_id] < 0.0 else jacobian_score[file_id]
     
-    fk_score = 0.0 if fk_score < 0.0 else fk_score
-    jacobian_score = 0.0 if jacobian_score < 0.0 else jacobian_score
+        print("- Your Score Of Forward Kinematic - {} : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}".format(
+            difficulty[file_id], fk_score[file_id], FK_SCORE_MAX / testcase_file_num, fk_error_cnt[file_id], cases_num))
+        print("- Your Score Of Jacobian Matrix   - {} : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}".format(
+            difficulty[file_id], jacobian_score[file_id], JACOBIAN_SCORE_MAX / testcase_file_num, jacobian_error_cnt[file_id], cases_num))
+
+    total_fk_score = 0.0
+    total_jacobian_score = 0.0
+    for file_id in range(testcase_file_num):
+        total_fk_score += fk_score[file_id]
+        total_jacobian_score += jacobian_score[file_id]
     
-    print("========== Task 1 : Forward Kinematic ==========")
-    print("- Your Score Of Forward Finematic : {:00.02f} / {:00.02f}, Error Count : {} / {}".format(
-        fk_score, FK_SCORE_MAX, fk_error_cnt, cases_num))
-    print("- Your Score Of Jacobian Matrix   : {:00.02f} / {:00.02f}, Error Count : {} / {}".format(
-        jacobian_score, JACOBIAN_SCORE_MAX, jacobian_error_cnt, cases_num))
-    print("- Total Score : {:00.02f} / {:00.02f}".format(
-        fk_score + jacobian_score, FK_SCORE_MAX + JACOBIAN_SCORE_MAX))
-    print("================================================")
+    print("====================================================================================")
+    print("- Your Total Score : {:00.02f} / {:00.02f}".format(
+        total_fk_score + total_jacobian_score, FK_SCORE_MAX + JACOBIAN_SCORE_MAX))
+    print("====================================================================================")
 
 def main(args):
 
-    assert args.difficulty >= 0 and args.difficulty <= 2, f'difficulty id should be 0: easy, 1: medium, 2: hard, but got {args.difficulty}'
-    
     # ------------------------ #
     # --- Setup simulation --- #
     # ------------------------ #
@@ -195,19 +205,18 @@ def main(args):
     # --- Test your Forward Kinematic function --- #
     # -------------------------------------------- #
 
-    testcase_file = {
-        0:'test_case/fk_testcase_easy.json',
-        1:'test_case/fk_testcase_medium.json',
-        2:'test_case/fk_testcase_hard.json'
-    }[args.difficulty]
+    testcase_files = [
+        'test_case/fk_testcase_easy.json',
+        'test_case/fk_testcase_medium.json',
+        'test_case/fk_testcase_hard.json'
+    ]
 
     # scoring your algorithm
-    score_ik(robot, testcase_file, visualize=args.gui)
+    score_fk(robot, testcase_files, visualize=args.gui)
 
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--difficulty', '-d', type=int, default=0, help='difficulty : [0: easy, 1:medium, 2:hard]')
     parser.add_argument('--gui', '-g', action='store_true', default=False, help='gui : whether show the window')
     args = parser.parse_args()
     main(args)
