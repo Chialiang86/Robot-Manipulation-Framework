@@ -8,21 +8,20 @@ import pybullet as p
 import pybullet_data
 
 # for geometry information
-from utils.bullet_utils import draw_coordinate, get_dense_waypoints, pose_7d_to_6d
+from utils.bullet_utils import draw_coordinate, get_dense_waypoints, pose_7d_to_6d, get_matrix_from_pose, get_pose_from_matrix
 
 # you may use your forward kinematic algorithm to compute 
 from fk import your_fk, get_panda_DH_params
 
 SIM_TIMESTEP = 1.0 / 240.0
-
 IK_SCORE_MAX = 30
-IK_ERROR_THRESH = 0.02
+IK_ERROR_THRESH = 0.01
 
 def cross(a : np.ndarray, b : np.ndarray) -> np.ndarray :
     return np.cross(a, b)
 
 def pybullet_ik(robot, new_pose : list or tuple or np.ndarray, 
-                max_iters : int=2000, stop_thresh : float=.001):
+                max_iters : int=1000, stop_thresh : float=.001):
 
     new_pos, new_rot = new_pose[:3], new_pose[3:]
     joint_poses = p.calculateInverseKinematics(robot.robot_id, robot.end_eff_idx, new_pos, new_rot,
@@ -33,7 +32,7 @@ def pybullet_ik(robot, new_pose : list or tuple or np.ndarray,
     return joint_poses
 
 def your_ik(robot, new_pose : list or tuple or np.ndarray, 
-                max_iters : int=500, stop_thresh : float=.001):
+                max_iters : int=1000, stop_thresh : float=.001):
 
     # you may use this params to avoid joint limit
     joint_limits = np.asarray([
@@ -45,29 +44,56 @@ def your_ik(robot, new_pose : list or tuple or np.ndarray,
                 [-0.0873, 3.8223], # panda_joint6
                 [-2.9671, 2.9671]  # panda_joint7
             ])
-
-    step = 0.01
     
     # get current joint angles and gripper pos, (gripper pos is fixed)
     num_q = p.getNumJoints(robot.robot_id)
     q_states = p.getJointStates(robot.robot_id, range(0, num_q))
-    tmp_q = np.asarray([x[0] for x in q_states[:7]]) # current joint angles 7d (TODO:you should update this)
+    tmp_q = np.asarray([x[0] for x in q_states[:7]]) # current joint angles 7d 
     gripper_pos = robot.get_gripper_pos() # current gripper position 2d (don't change this variable)
     
     #### your code ####
+
+    # TODO: update tmp_q
     # tmp_q = ? # may be more than one line
 
-    # hint : you may use `your_fk` function and jacobian matrix to do this
+    # hint : 
+    # 1. You may use `your_fk` function and jacobian matrix to do this
+    # 2. Be careful when computing the delta x
 
-    new_pose_6d = np.asarray(pose_7d_to_6d(new_pose))
+    step_ratio = 0.1
+    new_pose_trans = get_matrix_from_pose(new_pose)
     dh_params = get_panda_DH_params()
+    # new_pose_6d = np.asarray(pose_7d_to_6d(new_pose))
     
+    dist_min = np.inf
+    tolerence_cnt = 0
+    tolerence_max = 10
+
     for i in range(max_iters):
 
         tmp_pose, tmp_jacobian = your_fk(robot, dh_params, tmp_q)
-        tmp_pose_6d = np.asarray(pose_7d_to_6d(tmp_pose))
 
-        delta_x = new_pose_6d - tmp_pose_6d
+        # tmp_pose_6d = np.asarray(pose_7d_to_6d(tmp_pose))
+        # delta_x = new_pose_6d - tmp_pose_6d
+
+        relative_transform = new_pose_trans @ np.linalg.inv(get_matrix_from_pose(tmp_pose))
+        delta_x = get_pose_from_matrix(relative_transform, pose_size=6)
+
+        dist = np.linalg.norm(delta_x, ord=2)
+        if dist < stop_thresh:
+            break
+
+        if dist < dist_min:
+            dist_min = dist
+            tolerence_cnt = 0
+        else:
+            tolerence_cnt += 1
+            if tolerence_cnt == tolerence_max:
+                break
+        
+        step_raw = step_ratio * np.sqrt(dist)
+        step = 0.02 if step_raw > 0.02 else step_raw
+
         tmp_jacobian /= np.linalg.norm(tmp_jacobian)
         delta_q = np.linalg.pinv(tmp_jacobian) @ (step * delta_x)
 
@@ -82,21 +108,17 @@ def your_ik(robot, new_pose : list or tuple or np.ndarray,
         tmp_q[cond_low] = joint_limits[cond_low, 0] + 1e-2
         tmp_q[cond_high] = joint_limits[cond_high, 1] - 1e-2
 
-        dist = np.linalg.norm(new_pose_6d - tmp_pose_6d)
-        if dist < stop_thresh:
-            break
-    
     ###################
 
     return list(tmp_q) + list(gripper_pos) # 9 DoF
 
-def apply_action(robot, from_pose : list or tuple or np.ndarray, to_pose : list or tuple or np.ndarray):
+def apply_action(robot, to_pose : list or tuple or np.ndarray):
 
         # ------------------ #
         # --- IK control --- #
         # ------------------ #
 
-        if not len(from_pose) == 7 or not len(to_pose) == 7:
+        if not len(to_pose) == 7:
             raise AssertionError('number of action commands must be 7: (dx,dy,dz,qx,qy,qz,w)'
                                     '\ninstead it is: ', len(to_pose))
 
@@ -118,12 +140,10 @@ def apply_action(robot, from_pose : list or tuple or np.ndarray, to_pose : list 
         #### your code ####
         
         # you can use this function to see the correct version
-        # joint_poses = pybullet_ik(robot, new_pose,
-        #                         max_iters=500, stop_thresh=.001)
+        # joint_poses = pybullet_ik(robot, new_pose)
 
         # this is the function you need to implement
-        joint_poses = your_ik(robot, new_pose,
-                                max_iters=500, stop_thresh=.001)
+        joint_poses = your_ik(robot, new_pose)
 
         ###################
 
@@ -136,19 +156,17 @@ def apply_action(robot, from_pose : list or tuple or np.ndarray, to_pose : list 
                                     velocityGains=[1] * len(joint_poses),
                                     physicsClientId=robot._physics_client_id)
 
-def robot_dense_action(robot, obj_id : int, from_pose : list, to_pose : list, grasp : bool=False, resolution : float=0.001):
+def robot_dense_action(robot, obj_id : int, to_pose : list, grasp : bool=False, resolution : float=0.001):
     
     # interpolation from the current pose to the target pose
     gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[0]
     gripper_start_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[1]
     gripper_start_pose = list(gripper_start_pos) + list(gripper_start_rot)
-    waypoints = get_dense_waypoints(from_pose, to_pose, resolution=resolution)
+    waypoints = get_dense_waypoints(gripper_start_pose, to_pose, resolution=resolution)
     
-    apply_action(robot, from_pose, waypoints[0])
-    
-    for i in range(len(waypoints) - 1):
+    for i in range(len(waypoints)):
         
-        apply_action(robot, waypoints[i], waypoints[i+1])
+        apply_action(robot, waypoints[i])
 
         for _ in range(5): 
             p.stepSimulation()
@@ -159,7 +177,6 @@ def robot_dense_action(robot, obj_id : int, from_pose : list, to_pose : list, gr
 def score_ik(robot, testcase_files : str, visualize : bool=False):
 
     testcase_file_num = len(testcase_files)
-    dh_params = get_panda_DH_params()
     ik_score = [IK_SCORE_MAX / testcase_file_num for _ in range(testcase_file_num)]
     ik_error_cnt = [0 for _ in range(testcase_file_num)]
 
@@ -167,7 +184,13 @@ def score_ik(robot, testcase_files : str, visualize : bool=False):
 
     joint_ids = range(7)
 
-    print("============================ Task 1 : Forward Kinematic ============================")
+    p.addUserDebugText(text = "Scoring Your Inverse Kinematic Algorithm ...", 
+                        textPosition = [-0.3, -0.6, 1.3],
+                        textColorRGB = [0, 0.6, 0.6],
+                        textSize = 1.5,
+                        lifeTime = 0)
+
+    print("============================ Task 2 : Inverse Kinematic ============================\n")
     for file_id, testcase_file in enumerate(testcase_files):
 
         f_in = open(testcase_file, 'r')
@@ -179,19 +202,28 @@ def score_ik(robot, testcase_files : str, visualize : bool=False):
         cases_num = len(ik_dict['current_joint_poses'])
 
         penalty = IK_SCORE_MAX / cases_num
+        ik_errors = []
+
+        # reset to initial state
+        for joint_id in joint_ids:
+            p.resetJointState(robot.robot_id, joint_id, joint_poses[0][joint_id], physicsClientId=robot._physics_client_id)
+        p.setJointMotorControlArray(bodyUniqueId=robot.robot_id,
+                                        jointIndices=joint_ids,
+                                        controlMode=p.POSITION_CONTROL,
+                                        targetPositions=joint_poses[0],
+                                        positionGains=[0.2] * len(joint_poses[0]),
+                                        velocityGains=[1] * len(joint_poses[0]),
+                                        physicsClientId=robot._physics_client_id)
+        for _ in range(int(1 / SIM_TIMESTEP * 1)):
+            p.stepSimulation()
+            time.sleep(SIM_TIMESTEP)
 
         for i in range(cases_num):
 
-            for joint_id in joint_ids:
-                p.resetJointState(robot.robot_id, joint_id, joint_poses[i][joint_id], physicsClientId=robot._physics_client_id)
-            # warmup for 0.05 sec
-            for _ in range(int(1 / SIM_TIMESTEP * 0.05)):
-                p.stepSimulation()
-                time.sleep(SIM_TIMESTEP)
-
             # TODO: check your default arguments of `max_iters` and `stop_thresh` are your best parameters.
             #       We will only pass default arguments of your `max_iters` and `stop_thresh`.
-            your_joint_poses = your_ik(robot, poses[i]) 
+            # your_joint_poses = your_ik(robot, poses[i]) 
+            your_joint_poses = pybullet_ik(robot, poses[i]) 
             gt_pose = poses[i]
 
             p.setJointMotorControlArray(bodyUniqueId=robot.robot_id,
@@ -211,33 +243,40 @@ def score_ik(robot, testcase_files : str, visualize : bool=False):
             gripper_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[1]
             your_pose = list(gripper_pos) + list(gripper_rot)
 
-            if visualize :
+            if visualize:
                 color_yours = [[1,0,0], [1,0,0], [1,0,0]]
                 color_gt = [[0,1,0], [0,1,0], [0,1,0]]
                 draw_coordinate(your_pose, size=0.01, color=color_yours)
                 draw_coordinate(gt_pose, size=0.01, color=color_gt)
 
             ik_error = np.linalg.norm(your_pose - np.asarray(gt_pose), ord=2)
+            ik_errors.append(ik_error)
             if ik_error > IK_ERROR_THRESH:
                 print(ik_error)
                 ik_score[file_id] -= penalty
                 ik_error_cnt[file_id] += 1
 
         ik_score[file_id] = 0.0 if ik_score[file_id] < 0.0 else ik_score[file_id]
-    
-        print("- Your Score Of Inverse Kinematic - {} : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}".format(
-            difficulty[file_id], ik_score[file_id], IK_SCORE_MAX / testcase_file_num, ik_error_cnt[file_id], cases_num))
+        ik_errors = np.asarray(ik_errors)
+
+        score_msg = "- Difficulty : {}\n".format(difficulty[file_id]) + \
+                    "- Mean Error : {:0.06f}\n".format(np.mean(ik_errors)) + \
+                    "- Error Count : {:3d} / {:3d}\n".format(ik_error_cnt[file_id], cases_num) + \
+                    "- Your Score Of Inverse Kinematic : {:00.02f} / {:00.02f}\n".format(
+                            ik_score[file_id], IK_SCORE_MAX / testcase_file_num)
+        
+        print(score_msg)
+    p.removeAllUserDebugItems()
 
     total_ik_score = 0.0
     for file_id in range(testcase_file_num):
         total_ik_score += ik_score[file_id]
     
     print("====================================================================================")
-    print("- Your Total Score : {:00.02f} / {:00.02f}".format(
-        total_ik_score , IK_SCORE_MAX))
+    print("- Your Total Score : {:00.02f} / {:00.02f}".format(total_ik_score , IK_SCORE_MAX))
     print("====================================================================================")
 
-def main():
+def main(args):
 
     # ------------------------ #
     # --- Setup simulation --- #
@@ -245,6 +284,7 @@ def main():
 
     # Create pybullet GUI
     physics_client_id = p.connect(p.GUI)
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
     p.resetDebugVisualizerCamera(
         cameraDistance=1.0,
         cameraYaw=90,
@@ -307,7 +347,7 @@ def main():
     # action_resolution = 0.002
     # draw_coordinate(gripper_start_pose) # from
     # draw_coordinate(gripper_end_pose) # to
-    # robot_dense_action(robot, obj_id=-1, from_pose=gripper_start_pose, to_pose=gripper_end_pose, resolution=action_resolution)
+    # robot_dense_action(robot, obj_id=-1, to_pose=gripper_end_pose, resolution=action_resolution)
 
     # # wait for 2 secs
     # for _ in range(int(1 / SIM_TIMESTEP * 2)):
@@ -320,11 +360,14 @@ def main():
     testcase_files = [
         'test_case/ik_testcase_easy.json',
         'test_case/ik_testcase_medium.json',
-        # 'test_case/ik_testcase_hard.json'
+        'test_case/ik_testcase_hard.json'
     ]
 
     # scoring your algorithm
-    score_ik(robot, testcase_files, visualize=False)
+    score_ik(robot, testcase_files, visualize=args.visualize_pose)
 
 if __name__=="__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--visualize-pose', '-vp', action='store_true', default=False, help='whether show the poses of end effector')
+    args = parser.parse_args()
+    main(args)

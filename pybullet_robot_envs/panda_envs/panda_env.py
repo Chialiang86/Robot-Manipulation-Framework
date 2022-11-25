@@ -21,7 +21,7 @@ class pandaEnv:
     }
 
     # def __init__(self, physicsClientId, use_IK=0, base_position=(-0.20, 0.10, 0.5), control_orientation=1, control_eu_or_quat=0,
-    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.13, 0.13, 0.5), control_orientation=1, control_eu_or_quat=0,
+    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.13, 0.13, 0.6), control_orientation=1, control_eu_or_quat=0,
                  joint_action_space=9, includeVelObs=True):
 
         self._physics_client_id = physicsClientId

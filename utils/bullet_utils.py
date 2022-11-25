@@ -29,6 +29,40 @@ def pose_7d_to_6d(pose : list or tuple or np.ndarray):
 
     return list(pos) + list(rot_vec)
 
+def get_matrix_from_pose(pose : list or tuple or np.ndarray) -> np.ndarray:
+    assert len(pose) == 6 or len(pose) == 7, f'pose must contain 6 or 7 elements, but got {len(pose)}'
+    pos_m = np.asarray(pose[:3])
+    rot_m = np.identity(3)
+
+    if len(pose) == 6:
+        rot_m = R.from_rotvec(pose[3:]).as_matrix()
+    elif len(pose) == 7:
+        rot_m = R.from_quat(pose[3:]).as_matrix()
+            
+    ret_m = np.identity(4)
+    ret_m[:3, :3] = rot_m
+    ret_m[:3, 3] = pos_m
+
+    return ret_m
+
+def get_pose_from_matrix(matrix : list or tuple or np.ndarray, 
+                        pose_size : int = 7) -> np.ndarray:
+
+    mat = np.array(matrix)
+    assert mat.shape == (4, 4), f'pose must contain 4 x 4 elements, but got {mat.shape}'
+    
+    pos = matrix[:3, 3]
+    rot = None
+
+    if pose_size == 6:
+        rot = R.from_matrix(matrix[:3, :3]).as_rotvec()
+    elif pose_size == 7:
+        rot = R.from_matrix(matrix[:3, :3]).as_quat()
+            
+    pose = list(pos) + list(rot)
+
+    return np.array(pose)
+
 def get_matrix_from_pos_rot(pos : list or tuple or np.ndarray, rot : list or tuple or np.ndarray):
     assert (len(pos) == 3 and len(rot) == 4) or (len(pos) == 3 and len(rot) == 3)
     pos_m = np.asarray(pos)

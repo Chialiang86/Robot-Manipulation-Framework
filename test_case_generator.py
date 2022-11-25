@@ -265,7 +265,7 @@ def main():
                 gripper_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[5]
                 gripper_pose = list(gripper_pos) + list(gripper_rot)
 
-                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > 0.2:
+                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > 0.3:
 
                     # fk_dict['joint_poses'].append(joint_poses)
                     # fk_dict['poses'].append(gripper_pose)

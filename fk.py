@@ -122,7 +122,14 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
 
     difficulty = ['easy  ', 'normal', 'hard  ', 'devil']
 
-    print("============================ Task 1 : Forward Kinematic ============================")
+
+    p.addUserDebugText(text = "Scoring Your Forward Kinematic Algorithm ...", 
+                        textPosition = [-0.3, -0.6, 1.3],
+                        textColorRGB = [0, 0.6, 0.6],
+                        textSize = 1.5,
+                        lifeTime = 0)
+
+    print("============================ Task 1 : Forward Kinematic ============================\n")
     for file_id, testcase_file in enumerate(testcase_files):
 
         f_in = open(testcase_file, 'r')
@@ -158,11 +165,15 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
         
         fk_score[file_id] = 0.0 if fk_score[file_id] < 0.0 else fk_score[file_id]
         jacobian_score[file_id] = 0.0 if jacobian_score[file_id] < 0.0 else jacobian_score[file_id]
-    
-        print("- Your Score Of Forward Kinematic - {} : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}".format(
-            difficulty[file_id], fk_score[file_id], FK_SCORE_MAX / testcase_file_num, fk_error_cnt[file_id], cases_num))
-        print("- Your Score Of Jacobian Matrix   - {} : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}".format(
-            difficulty[file_id], jacobian_score[file_id], JACOBIAN_SCORE_MAX / testcase_file_num, jacobian_error_cnt[file_id], cases_num))
+
+        score_msg = "- Difficulty : {}\n".format(difficulty[file_id]) + \
+                    "- Your Score Of Forward Kinematic : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}\n".format(
+                            fk_score[file_id], FK_SCORE_MAX / testcase_file_num, fk_error_cnt[file_id], cases_num) + \
+                    "- Your Score Of Jacobian Matrix   : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}\n".format(
+                            jacobian_score[file_id], JACOBIAN_SCORE_MAX / testcase_file_num, jacobian_error_cnt[file_id], cases_num)
+        
+        print(score_msg)
+    p.removeAllUserDebugItems()
 
     total_fk_score = 0.0
     total_jacobian_score = 0.0
@@ -212,11 +223,12 @@ def main(args):
     ]
 
     # scoring your algorithm
-    score_fk(robot, testcase_files, visualize=args.gui)
+    score_fk(robot, testcase_files, visualize=args.visualize_pose)
 
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--gui', '-g', action='store_true', default=False, help='gui : whether show the window')
+    parser.add_argument('--visualize-pose', '-vp', action='store_true', default=False, help='whether show the poses of end effector')
     args = parser.parse_args()
     main(args)

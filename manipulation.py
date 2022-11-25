@@ -201,16 +201,29 @@ def load_kpts_from_depth(intrinsic : list or np.ndarray, keypoints : list or np.
 
 def checkpoint(num : int, msg  : str):
     print_log(f"checkpoint {num} : {msg}")
-    print_log("press y on PyBullet GUI to continue or press n on PyBullet GUI to redo ...")
+    print_log("press y on PyBullet GUI to continue or press n on PyBullet GUI to quit or redo ...")
+    p.addUserDebugText(text = f"checkpoint {num} : {msg}", 
+                textPosition = [0.6, -0.5, 1.15],
+                textColorRGB = [1,1,1],
+                textSize = 1.5,
+                lifeTime = 0)
+    p.addUserDebugText(text = "press y on PyBullet GUI to continue or press n on PyBullet GUI to quit or redo ...", 
+                textPosition = [0.6, -0.5, 1.1],
+                textColorRGB = [1,1,1],
+                textSize = 1.5,
+                lifeTime = 0)
+
     repeat = False
     while True:
         # key callback
         keys = p.getKeyboardEvents()            
-        if ord('y') in keys and keys[ord('y')] & (p.KEY_WAS_TRIGGERED | p.KEY_IS_DOWN): 
+        if ord('y') in keys and keys[ord('y')] & (p.KEY_WAS_TRIGGERED): 
             break
-        if ord('n') in keys and keys[ord('n')] & (p.KEY_WAS_TRIGGERED | p.KEY_IS_DOWN): 
+        if ord('n') in keys and keys[ord('n')] & (p.KEY_WAS_TRIGGERED): 
             repeat = True
             break
+
+    p.removeAllUserDebugItems()
     
     return repeat
 
@@ -280,8 +293,8 @@ def rrt_connect_7d(physics_client_id, obj_id, start_conf, target_conf,
     
     low_limit = [0, 0, 0]
     high_limit = [0, 0, 0]
-    padding_low  = [ 0.02,  0.01, 0.00]
-    padding_high = [ 0.02,  0.01, 0.1]
+    padding_low  = [ 0.1,  0.1, 0.00]
+    padding_high = [ 0.1,  0.1, 0.1]
 
     # xlim, ylim
     for i in range(3):
@@ -315,6 +328,7 @@ def main(args):
 
     # Create pybullet GUI
     physics_client_id = p.connect(p.GUI)
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
     p.resetDebugVisualizerCamera(
         cameraDistance=0.5,
         cameraYaw=90,
@@ -337,7 +351,7 @@ def main(args):
     info_dict = json.load(f_intr)
 
     cam_coordinate = {
-        'cameraEyePosition': [0.35, 0.4, 0.76],
+        'cameraEyePosition': [0.35, 0.45, 0.8],
         'cameraTargetPosition': [0.35, 0.1, 0.76],
         'cameraUpVector': [0.0, 0.0, 1.0],
     }
@@ -361,7 +375,7 @@ def main(args):
     # wall
     # wall_pos = [0.5, -0.11, 1.0]
     # wall_orientation = p.getQuaternionFromEuler([0, 0, 0])
-    # wall_id = p.loadURDF("models/wall/wall.urdf", wall_pos, wall_orientation)
+    # wall_id = p.loadURDF("3d_models/objects/wall/wall.urdf", wall_pos, wall_orientation)
 
     # Load plane contained in pybullet_data
     table_id = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "table/table.urdf"), [0.9, 0.0, 0.1])
@@ -376,9 +390,6 @@ def main(args):
     urdf_path = info_dict['hook_path']
     assert os.path.exists(urdf_path), f'{urdf_path} not exists'
     hook_id = p.loadURDF(urdf_path, [0.5, -0.1, 1.3], [0.0, 0.7071067811865475, 0.7071067811865476, 0.0])
-
-    # keypoint annotation using web keypoint annotator 
-    # Github : https://github.com/luiscarlosgph/keypoint-annotation-tool
 
     # randomly initialize the pose of the object
     standing_pos, standing_rot = randomize_standing_pose(base_pos=[0.35, 0.1, 0.76], base_rot=[np.pi / 2, 0, 0])
@@ -429,43 +440,54 @@ def main(args):
 
     while repeat:
 
+        p.addUserDebugText(text =  "LOG : Please annotate several keypoints on template_rgb for template pose matching", 
+                    textPosition = [0.6, -0.5, 1.15],
+                    textColorRGB = [1,1,1],
+                    textSize = 1.5,
+                    lifeTime = 0)
+
         # keypoint annotation for template image
-        print_log('please annotate several keypoints on template_rgb for template pose matching')
         state = 0
         template_3d_kpts = []
-        template_rgb_copy = template_rgb.copy()
+        template_rgb_copy = cv2.cvtColor(template_rgb.copy(), cv2.COLOR_BGR2RGB)
         cv2.imshow('template_rgb', template_rgb_copy)
         cv2.setMouseCallback('template_rgb', click_event)
         while len(template_3d_kpts) == 0:
             cv2.waitKey(0)
             if len(template_3d_kpts) == 0:
                 print_log('please annotate at least one keypoint!!!', 1)
+        cv2.destroyAllWindows()
         
         # keypoint annotation for initial pose
         print_log('please annotate several keypoints on init_rgb for template pose matching')
         state = 1
         init_3d_kpts = []
-        init_rgb_copy = init_rgb.copy()
+        init_rgb_copy = cv2.cvtColor(init_rgb.copy(), cv2.COLOR_BGR2RGB)
         cv2.imshow('init_rgb', init_rgb_copy)
         cv2.setMouseCallback('init_rgb', click_event)
         while len(init_3d_kpts) == 0:
             cv2.waitKey(0)
             if len(init_3d_kpts) == 0:
                 print_log('please annotate at least one keypoint!!!', 1)
+        cv2.destroyAllWindows()
 
         # keypoint annotation for target pose
         print_log('please annotate several keypoints on hanging_rgb for template pose matching')
         state = 2
         hanging_3d_kpts = []
-        hanging_rgb_copy = hanging_rgb.copy()
+        hanging_rgb_copy = cv2.cvtColor(hanging_rgb.copy(), cv2.COLOR_BGR2RGB)
         cv2.imshow('hanging_rgb', hanging_rgb_copy)
         cv2.setMouseCallback('hanging_rgb', click_event)
         while len(hanging_3d_kpts) == 0:
             cv2.waitKey(0)
             if len(hanging_3d_kpts) == 0:
                 print_log('please annotate at least one keypoint!!!', 1)
-
         cv2.destroyAllWindows()
+
+        p.removeAllUserDebugItems()
+        
+        merged_image = np.hstack((template_rgb_copy, init_rgb_copy, hanging_rgb_copy))
+        cv2.imwrite(f'{input_dir}/merged_image.jpg', merged_image)
 
         # before matching
         coor = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
@@ -505,16 +527,43 @@ def main(args):
         #     )
         
         # template and initial view point cloud before and after alignment
+
+        p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to initial pose (see Open3d window)", 
+                    textPosition = [0.6, -0.5, 1.15],
+                    textColorRGB = [1,1,1],
+                    textSize = 1.5,
+                    lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template_pcd, init_pcd])
+        p.removeAllUserDebugItems()
+        
         template2init_pcd = copy.deepcopy(template_pcd)
         template2init_pcd.transform(template2init)
+        p.addUserDebugText(text =  "LOG : After matching the pose from template pose to initial pose (see Open3d window)", 
+                    textPosition = [0.6, -0.5, 1.15],
+                    textColorRGB = [1,1,1],
+                    textSize = 1.5,
+                    lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template2init_pcd, init_pcd])
+        p.removeAllUserDebugItems()
         
         # template and hanging view point cloud before and after alignment
+        p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to target pose (see Open3d window)", 
+                    textPosition = [0.6, -0.5, 1.15],
+                    textColorRGB = [1,1,1],
+                    textSize = 1.5,
+                    lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template_pcd, hanging_pcd])
+        p.removeAllUserDebugItems()
+
         template2hanging_pcd = copy.deepcopy(template_pcd)
         template2hanging_pcd.transform(template2hanging)
+        p.addUserDebugText(text =  "LOG : After matching the pose from template pose to target pose (see Open3d window)", 
+                    textPosition = [0.6, -0.5, 1.15],
+                    textColorRGB = [1,1,1],
+                    textSize = 1.5,
+                    lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template2hanging_pcd, hanging_pcd])
+        p.removeAllUserDebugItems()
 
         # grasping pose
         gripper_grasping_trans = template2init @ template_gripper_trans
@@ -525,7 +574,7 @@ def main(args):
         gripper_hanging_pose = get_7d_pose_from_matrix(gripper_hanging_trans)
 
         # checkpoint, repeat if repeat (pressing n) 
-        repeat = checkpoint(1, '[After finishing pose matching and grasping pose finding, let\'s grasp the mug]')
+        repeat = checkpoint(1, 'After finishing pose matching and finding the grasping pose, let\'s grasp the mug')
 
     # ------------------- #
     # --- Setup robot --- #
@@ -534,9 +583,6 @@ def main(args):
     # goto initial pose
     action_resolution = 0.005
     robot = pandaEnv(physics_client_id, use_IK=1)
-    gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[4]
-    gripper_start_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[5]
-    gripper_start_pose = list(gripper_start_pos) + list(gripper_start_rot)
     
     # warmup for 2 secs
     for _ in range(int(1 / SIM_TIMESTEP * 2)):
@@ -551,7 +597,7 @@ def main(args):
     gripper_prepare_pose = copy.copy(gripper_grasping_pose)
     gripper_prepare_pose[2] += 0.15
     draw_coordinate(gripper_prepare_pose)
-    robot_dense_action(robot, obj_id, gripper_start_pose, gripper_prepare_pose, grasp=False, resolution=action_resolution)
+    robot_dense_action(robot, obj_id, gripper_prepare_pose, grasp=False, resolution=action_resolution)
 
     joint_names, joint_poses, joint_types = get_robot_joint_info(robot.robot_id)
     # print_log(joint_poses)
@@ -561,7 +607,7 @@ def main(args):
     # ---------------- #
 
     # go to the grasping pose
-    robot_dense_action(robot, obj_id, gripper_prepare_pose, gripper_grasping_pose, grasp=False, resolution=action_resolution)
+    robot_dense_action(robot, obj_id, gripper_grasping_pose, grasp=False, resolution=action_resolution)
 
     # grasping
     robot.grasp(obj_id=obj_id)
@@ -578,14 +624,14 @@ def main(args):
     gripper_key_pose[1] += 0.1
     gripper_key_pose[2] += 0.02
     draw_coordinate(gripper_key_pose)
-    robot_dense_action(robot, obj_id, gripper_grasping_pose, gripper_key_pose, grasp=True, resolution=action_resolution)
+    robot_dense_action(robot, obj_id, gripper_key_pose, grasp=True, resolution=action_resolution)
     
     # print_log(f'keypose : {gripper_key_pose}')
     # record current object pose
     obj_pos, obj_rot = p.getBasePositionAndOrientation(obj_id)
     key_obj_pose = obj_pos + obj_rot
 
-    stop = checkpoint(2, 'After grasping the mug, let\'s start to hanging the mug on the hook')
+    stop = checkpoint(2, 'After grasping the mug, let\'s start to hanging the mug on the hook using RRT algorithm')
     if stop:
         return
 
@@ -617,8 +663,8 @@ def main(args):
 
     # reset obj pose and execute the gripper waypoints for hanging
     p.resetBasePositionAndOrientation(obj_id, key_obj_pose[:3], key_obj_pose[3:])
-    for i in range(len(gripper_waypoints) - 1):
-        robot_dense_action(robot, obj_id, gripper_waypoints[i], gripper_waypoints[i + 1], grasp=True, resolution=action_resolution)
+    for i in range(len(gripper_waypoints)):
+        robot_dense_action(robot, obj_id, gripper_waypoints[i], grasp=True, resolution=action_resolution)
 
     # execution step 3 : open the gripper
     robot.pre_grasp()
@@ -631,7 +677,7 @@ def main(args):
     gripper_rot_matrix = R.from_quat(gripper_pose[3:]).as_matrix()
     gripper_ending_pos = np.asarray(gripper_pose[:3]) + (gripper_rot_matrix @ np.array([[0], [0], [-0.15]])).reshape(3)
     gripper_ending_pose = tuple(gripper_ending_pos) + tuple(gripper_pose[3:])
-    robot_dense_action(robot, obj_id, gripper_pose, gripper_ending_pose, grasp=False, resolution=action_resolution)
+    robot_dense_action(robot, obj_id, gripper_ending_pose, grasp=False, resolution=action_resolution)
 
     print_log('process completed')
     for _ in range(int(1 / SIM_TIMESTEP * 3)): 
@@ -644,6 +690,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input-dir', '-i', type=str, default='data/mug-Hook_60')
+    parser.add_argument('--input-dir', '-i', type=str, default='data/mug-Hook_skew')
     args = parser.parse_args()
     main(args)
