@@ -26,8 +26,6 @@ def get_sample7d_fn(target_conf : list or tuple or np.ndarray,
         else:
             pos_euler = []
 
-            rotvec = R.from_quat(target_conf[3:]).as_rotvec()
-
             pos_euler.append(np.random.uniform(low_limit[0], high_limit[0])) # x
             pos_euler.append(np.random.uniform(low_limit[1], high_limit[1])) # y 
             pos_euler.append(np.random.uniform(low_limit[2], high_limit[2])) # z
@@ -53,7 +51,6 @@ def get_distance7d_fn():
 
         return 1.0 * np.sum(diff_pos ** 2) + 2.0 * np.sum(diff_rot ** 2)
     return distance7d_fn
-
 
 def xyzw2wxyz(quat : np.ndarray):
     assert len(quat) == 4, f'quaternion size must be 4, got {len(quat)}'

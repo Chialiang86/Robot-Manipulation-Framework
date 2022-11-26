@@ -12,7 +12,7 @@ from pybullet_planning.interfaces.planner_interface.joint_motion_planning import
 from pybullet_planning.motion_planners.rrt_connect import birrt
 
 # for robot control
-from utils.bullet_utils import draw_coordinate, get_7d_pose_from_matrix, get_matrix_from_7d_pose, draw_bbox, get_robot_joint_info
+from utils.bullet_utils import draw_coordinate, get_pose_from_matrix, get_matrix_from_pose, draw_bbox, get_robot_joint_info
 from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 
 # for your custom IK solver
@@ -108,6 +108,7 @@ def randomize_standing_pose(base_pos, base_rot):
     target_rot =R.from_rotvec(target_rot).as_quat()
     return list(target_pos), list(target_rot)
 
+# for OpenCV API callback
 def click_event(event, x, y, flags, params):
 
     # checking for left mouse clicks
@@ -126,7 +127,10 @@ def click_event(event, x, y, flags, params):
             cv2.circle(hanging_rgb_copy, (x, y), 3, (0, 0, 255), -1)
             cv2.imshow('hanging_rgb', hanging_rgb_copy)
 
-def create_pcd_from_rgbd(rgb, depth, intr, extr, dscale, depth_threshold=2.0):
+def create_pcd_from_rgbd(rgb : np.ndarray, depth : np.ndarray, 
+                        intr : np.ndarray, extr : np.ndarray, 
+                        dscale : float, depth_threshold : float=2.0):
+
     assert rgb.shape[:2] == depth.shape, f'{rgb.shape[:2]} != {depth.shape}'
     (h, w) = depth.shape
     fx, fy, cx, cy = intr[0, 0], intr[1, 1], intr[0, 2], intr[1, 2]
@@ -156,7 +160,9 @@ def create_pcd_from_rgbd(rgb, depth, intr, extr, dscale, depth_threshold=2.0):
 
     return pcd
 
-def render(width, height, view_matrix, projection_matrix, far=1000., near=0.01, obj_id=-1):
+def render(width : int, height : int, 
+            view_matrix : list or np.ndarray, projection_matrix : list or np.ndarray, 
+            far : float=1000., near : float=0.01, obj_id : int=-1):
     far = 1000.
     near = 0.01
     img = p.getCameraImage(width, height, viewMatrix=view_matrix, projectionMatrix=projection_matrix)
@@ -185,7 +191,6 @@ def load_kpts_from_depth(intrinsic : list or np.ndarray, keypoints : list or np.
     depth = np.load(depth_path)
 
     # convert to xyz
-
     fx = intrinsic[0, 0]
     fy = intrinsic[1, 1]
     cx = intrinsic[0, 2]
@@ -205,12 +210,12 @@ def checkpoint(num : int, msg  : str):
     p.addUserDebugText(text = f"checkpoint {num} : {msg}", 
                 textPosition = [0.6, -0.5, 1.15],
                 textColorRGB = [1,1,1],
-                textSize = 1.5,
+                textSize = 1.0,
                 lifeTime = 0)
     p.addUserDebugText(text = "press y on PyBullet GUI to continue or press n on PyBullet GUI to quit or redo ...", 
                 textPosition = [0.6, -0.5, 1.1],
                 textColorRGB = [1,1,1],
-                textSize = 1.5,
+                textSize = 1.0,
                 lifeTime = 0)
 
     repeat = False
@@ -227,30 +232,42 @@ def checkpoint(num : int, msg  : str):
     
     return repeat
 
-def web_annotator(obj_root_dir : str, port : int or str):
-    os.system(f'python3 web_annotator.py {obj_root_dir} {port}')
-    return
-
+# prevent numpy unreachable bug
 def cross(a:np.ndarray,b:np.ndarray)->np.ndarray:
     return np.cross(a,b)
 
-def get_src2dst_transform_from_kpts(src_3kpts_homo : np.ndarray, src_extrinsic : np.ndarray, 
-                               dst_3kpts_homo : np.ndarray, dst_extrinsic : np.ndarray):
+def get_src2dst_transform_from_kpts(src_kpts_homo : np.ndarray, src_extrinsic : np.ndarray, 
+                               dst_kpts_homo : np.ndarray, dst_extrinsic : np.ndarray):
 
-    assert src_3kpts_homo.shape[0] == 4 and dst_3kpts_homo.shape[0] == 4, \
-                f'input array shape need to be (4, N), but get {src_3kpts_homo.shape} and {dst_3kpts_homo.shape}'
+    # TODO: this is the function for pose matching using your annotated keypoints
+    # You need to answer some questions in your report (25%)
+    # 1. Briefly explain how this function works for pose matching (5%)
+    #    (Hint: this function may be similar to some code in HW1)
+    # 2. What is the minimum number of keypoints we need to ensure the program runs properly? Why? (5%)
+    # 3. Explain why we need `template_gripper_transform` for manipulation in this .py file 
+    #    in the report (5%)
+    # 4. Briefly explain how to improve the matching accuracy (5%)
+    #    (You don't need to implement it. Ofcourse, if you implement the improved version and compare 
+    #    the results with the original version, you will get more than 5 points (at most 10)!!!)
+    # 5. Can we do the pose matching without any manual annotation in runtime? 
+    #    Share your ideas or reference some state-of-the art methosd and briefly explain 
+    #    how and why it may work (5%)
+    #    (You don't need to implement it)
+
+    assert src_kpts_homo.shape[0] == 4 and dst_kpts_homo.shape[0] == 4, \
+                f'input array shape need to be (4, N), but get {src_kpts_homo.shape} and {dst_kpts_homo.shape}'
     
     assert src_extrinsic.shape == (4, 4) and dst_extrinsic.shape == (4, 4), \
                 f'input array shape need to be (4, 4), but get {src_extrinsic.shape} and {dst_extrinsic.shape}'
-    
-    src_3kpts_homo = (src_extrinsic @ src_3kpts_homo)[:3,:]
-    dst_3kpts_homo = (dst_extrinsic @ dst_3kpts_homo)[:3,:]
-    
-    src_mean = np.mean(src_3kpts_homo, axis=1).reshape((3, 1))
-    dst_mean = np.mean(dst_3kpts_homo, axis=1).reshape((3, 1))
 
-    src_points_ = src_3kpts_homo - src_mean
-    dst_points_ = dst_3kpts_homo - dst_mean
+    src_kpts_homo = (src_extrinsic @ src_kpts_homo)[:3,:]
+    dst_kpts_homo = (dst_extrinsic @ dst_kpts_homo)[:3,:]
+    
+    src_mean = np.mean(src_kpts_homo, axis=1).reshape((3, 1))
+    dst_mean = np.mean(dst_kpts_homo, axis=1).reshape((3, 1))
+
+    src_points_ = src_kpts_homo - src_mean
+    dst_points_ = dst_kpts_homo - dst_mean
 
     W = dst_points_ @ src_points_.T
     
@@ -269,11 +286,12 @@ def get_src2dst_transform_from_kpts(src_3kpts_homo : np.ndarray, src_extrinsic :
 
     return transform
 
-def refine_obj_pose(physicsClientId, obj, original_pose, obstacles=[]):
+# make the initial collision checking of RRT successed
+def refine_obj_pose(physicsClientId : int, obj : int, original_pose, obstacles=[]):
     collision7d_fn = get_collision7d_fn(physicsClientId, obj, obstacles=obstacles)
 
-    low_limit = [-0.005, -0.005, -0.005, -np.pi / 180, -np.pi / 180, -np.pi / 180]
-    high_limit = [ 0.005,  0.005,  0.005,  np.pi / 180,  np.pi / 180,  np.pi / 180]
+    low_limit  = [-0.005,  0.00,  0.00, -np.pi / 180, -np.pi / 180, -np.pi / 180]
+    high_limit = [ 0.005,  0.01,  0.01,  np.pi / 180,  np.pi / 180,  np.pi / 180]
 
     obj_pos, obj_rot = original_pose[:3], original_pose[3:]
     refine_pose = original_pose
@@ -291,6 +309,7 @@ def rrt_connect_7d(physics_client_id, obj_id, start_conf, target_conf,
     start_pos = start_conf[:3]
     target_pos = target_conf[:3]
     
+    # sampling space
     low_limit = [0, 0, 0]
     high_limit = [0, 0, 0]
     padding_low  = [ 0.1,  0.1, 0.00]
@@ -345,29 +364,11 @@ def main(args):
     # --- Config camera parameters --- #
     # -------------------------------- #
 
-    input_info = f'{input_dir}/info.json'
+    input_info = f'{input_dir}/info.json' # ex : data/mug_67-Hook_skew/info.json
+    obj_name = input_info.split('/')[-2].split('-')[0] # ex : data/mug_67-Hook_skew/info.json -> mug_67
     assert os.path.exists(input_info), f'{input_info} not exists'
-    f_intr = open(input_info, 'r')
-    info_dict = json.load(f_intr)
-
-    cam_coordinate = {
-        'cameraEyePosition': [0.35, 0.45, 0.8],
-        'cameraTargetPosition': [0.35, 0.1, 0.76],
-        'cameraUpVector': [0.0, 0.0, 1.0],
-    }
-
-    cam_params = get_cam_params(info_dict, cam_coordinate)
-
-    intrinsic = cam_params['intrinsic']
-    template_extrinsic = cam_params['template_extrinsic']
-    init_extrinsic = cam_params['init_extrinsic']
-    hanging_extrinsic = cam_params['hanging_extrinsic']
-    view_matrix = cam_params['view_matrix']
-    projection_matrix = cam_params['projection_matrix']
-    width = cam_params['width']
-    height = cam_params['height']
-    far = 1000
-    near = 0.01
+    f_info = open(input_info, 'r')
+    info_dict = json.load(f_info)
 
     # ---------------------------- #
     # --- Load object and hook --- #
@@ -389,13 +390,19 @@ def main(args):
     # hook
     urdf_path = info_dict['hook_path']
     assert os.path.exists(urdf_path), f'{urdf_path} not exists'
-    hook_id = p.loadURDF(urdf_path, [0.5, -0.1, 1.3], [0.0, 0.7071067811865475, 0.7071067811865476, 0.0])
+    hook_pose = info_dict['hook_pose']
+    hook_id = p.loadURDF(urdf_path, hook_pose[:3], hook_pose[3:])
 
     # randomly initialize the pose of the object
-    standing_pos, standing_rot = randomize_standing_pose(base_pos=[0.35, 0.1, 0.76], base_rot=[np.pi / 2, 0, 0])
+    standing_pos, standing_rot = randomize_standing_pose(base_pos=[0.35, 0.1, 0.78], base_rot=[np.pi / 2, 0, 0])
     p.resetBasePositionAndOrientation(obj_id, standing_pos, standing_rot)
+    # warmup for 0.5 secs
+    for _ in range(int(1 / SIM_TIMESTEP * 0.5)):
+        p.stepSimulation()
+        time.sleep(SIM_TIMESTEP)
     
-    # keypoint list
+
+    # for keypont annotation
     global state
     global template_3d_kpts
     global init_3d_kpts
@@ -405,10 +412,25 @@ def main(args):
     global hanging_rgb_copy
     
     # render init RGB-D
+    cam_coordinate = {
+        'cameraEyePosition': [0.35, 0.45, 0.8],
+        'cameraTargetPosition': [0.35, 0.1, 0.76],
+        'cameraUpVector': [0.0, 0.0, 1.0],
+    }
+    cam_params = get_cam_params(info_dict, cam_coordinate)
+
+    view_matrix = cam_params['view_matrix']
+    projection_matrix = cam_params['projection_matrix']
+    width = cam_params['width']
+    height = cam_params['height']
+    far = 1000
+    near = 0.01
+
     init_rgb, init_depth = render(width, height, view_matrix, projection_matrix, 
                                         far=far, near=near, obj_id=obj_id)
     
     # save init view RGB-D to files
+    init_extrinsic = cam_params['init_extrinsic'] # extrinsic : from camera pose to world coordinate
     init_rgb_img = Image.fromarray(init_rgb)
     init_rgb_path = f'{input_dir}/rgb_init.jpg'
     init_rgb_img.save(init_rgb_path)
@@ -416,34 +438,43 @@ def main(args):
     init_depth_path = f'{input_dir}/depth_init.npy'
     np.save(init_depth_path, init_depth)
 
+    # load RGBD images
+    intrinsic = cam_params['intrinsic']
+
     # template view RGB-D
+    # this RGBD image contains the object that placed at the predefined pose (origin of the world coordinate)
+    template_extrinsic = cam_params['template_extrinsic'] # extrinsic : from camera pose to world coordinate
     template_rgb_path = f'{input_dir}/rgb_template.jpg'
     template_rgb = np.asarray(Image.open(template_rgb_path))
     template_depth_path = f'{input_dir}/depth_template.npy'
     template_depth = np.load(template_depth_path)
 
+    # TODO: Please check how `template_gripper_transform` works in the this .py script.
+    # Note: `template_gripper_transform` is the transformation matrix of the template grasping pose 
+    #       of the robot's gripper, which is the grasping pose of the object that placed at predefined location
+    template_grasping_fname = f'3d_models/objects/{obj_name}/grasping.json'
+    f = open(template_grasping_fname, 'r')
+    template_grasping = json.load(f)
+    f.close()
+    template_gripper_transform = np.asarray(template_grasping['obj2gripper'])
+    template_obj_transform = np.linalg.inv(template_gripper_transform)
+
     # hanging view RGB-D
+    # this RGBD image contains the object that placed at the target pose (hanging pose in world coordinate)
+    hanging_extrinsic = cam_params['hanging_extrinsic'] # extrinsic : from camera pose to world coordinate
     hanging_rgb_path = f'{input_dir}/rgb_hanging.jpg'
     hanging_rgb = np.asarray(Image.open(hanging_rgb_path))
     hanging_depth_path = f'{input_dir}/depth_hanging.npy'
     hanging_depth = np.load(hanging_depth_path)
 
-
-    template_gripper_trans = np.asarray([
-                            [ 0.98954677, -0.10356444,  0.10035739,  0.00496532],
-                            [ 0.1071792 ,  0.06254209, -0.99227068,  0.03851797],
-                            [ 0.09648739,  0.99265447,  0.07298828, -0.03677358],
-                            [ 0.0       ,  0.0       ,  0.0       ,  1.0       ]
-                        ])
-
+    # this loop is onl1y used for keypoint annotation
     repeat = True
-
     while repeat:
 
-        p.addUserDebugText(text =  "LOG : Please annotate several keypoints on template_rgb for template pose matching", 
+        p.addUserDebugText(text =  "LOG : Please annotate several keypoints on image for template pose matching (on OpenCV window)", 
                     textPosition = [0.6, -0.5, 1.15],
                     textColorRGB = [1,1,1],
-                    textSize = 1.5,
+                    textSize = 1.0,
                     lifeTime = 0)
 
         # keypoint annotation for template image
@@ -508,70 +539,71 @@ def main(args):
         num_kpts = template_3d_kpts.shape[1]
         template_3d_kpts_homo = np.vstack((template_3d_kpts, np.full((num_kpts,), 1.0)))
         init_3d_kpts_homo = np.vstack((init_3d_kpts, np.full((num_kpts,), 1.0)))
+        # TODO: Please check how `template2init` used in the this .py script
         template2init = get_src2dst_transform_from_kpts(template_3d_kpts_homo, template_extrinsic, init_3d_kpts_homo, init_extrinsic)
 
         template_3d_kpts_homo = np.vstack((template_3d_kpts, np.full((num_kpts,), 1.0)))
         hanging_3d_kpts_homo = np.vstack((hanging_3d_kpts, np.full((num_kpts,), 1.0)))
+        # TODO: Please check how `template2hanging` used in the this .py script
         template2hanging = get_src2dst_transform_from_kpts(template_3d_kpts_homo, template_extrinsic, hanging_3d_kpts_homo, hanging_extrinsic)
-
-        # template_tran = np.linalg.inv(init_extrinsic) @ template2init @ template_extrinsic @ template_3d_kpts_homo
-        # for i in range(template_tran.shape[1]):
-        #     print_log('template2init result : {} <-> {} error = {}'.format(
-        #         template_tran[:,i], init_3d_kpts_homo[:, i], np.linalg.norm(template_tran[:,i] - init_3d_kpts_homo[:, i], ord=2))
-        #     )
-
-        # hanging_tran = np.linalg.inv(hanging_extrinsic) @ template2hanging @ template_extrinsic @ template_3d_kpts_homo
-        # for i in range(template_tran.shape[1]):
-        #     print_log('template2hanging result : {} <-> {} error = {}'.format(
-        #         hanging_tran[:,i], hanging_3d_kpts_homo[:, i], np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2))
-        #     )
         
-        # template and initial view point cloud before and after alignment
+        # Computing the matching error between template pose and initial pose  
+        template_tran = np.linalg.inv(init_extrinsic) @ template2init @ template_extrinsic @ template_3d_kpts_homo
+        error = 0.0
+        for i in range(template_tran.shape[1]):
+            error += np.linalg.norm(template_tran[:,i] - init_3d_kpts_homo[:, i], ord=2)
+        print_log('template2init mean error = {}'.format(np.mean(error)))
 
-        p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to initial pose (see Open3d window)", 
-                    textPosition = [0.6, -0.5, 1.15],
-                    textColorRGB = [1,1,1],
-                    textSize = 1.5,
-                    lifeTime = 0)
-        o3d.visualization.draw_geometries([coor, template_pcd, init_pcd])
-        p.removeAllUserDebugItems()
+        # Computing the matching error between template pose and hanging pose  
+        hanging_tran = np.linalg.inv(hanging_extrinsic) @ template2hanging @ template_extrinsic @ template_3d_kpts_homo
+        error = 0.0
+        for i in range(template_tran.shape[1]):
+            error += np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2)
+        print_log('template2hanging mean error = {}'.format(np.mean(error)))
+
+        # Visualize the results
+
+        # template and initial view point cloud before and after alignment
+        # p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to initial pose (see Open3d window)", 
+        #             textPosition = [0.6, -0.5, 1.15],
+        #             textColorRGB = [1,1,1],
+        #             textSize = 1.0,
+        #             lifeTime = 0)
+        # o3d.visualization.draw_geometries([coor, template_pcd, init_pcd])
+        # p.removeAllUserDebugItems()
         
         template2init_pcd = copy.deepcopy(template_pcd)
         template2init_pcd.transform(template2init)
         p.addUserDebugText(text =  "LOG : After matching the pose from template pose to initial pose (see Open3d window)", 
                     textPosition = [0.6, -0.5, 1.15],
                     textColorRGB = [1,1,1],
-                    textSize = 1.5,
+                    textSize = 1.0,
                     lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template2init_pcd, init_pcd])
         p.removeAllUserDebugItems()
         
         # template and hanging view point cloud before and after alignment
-        p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to target pose (see Open3d window)", 
-                    textPosition = [0.6, -0.5, 1.15],
-                    textColorRGB = [1,1,1],
-                    textSize = 1.5,
-                    lifeTime = 0)
-        o3d.visualization.draw_geometries([coor, template_pcd, hanging_pcd])
-        p.removeAllUserDebugItems()
+        # p.addUserDebugText(text =  "LOG : Before matching the pose from template pose to target pose (see Open3d window)", 
+        #             textPosition = [0.6, -0.5, 1.15],
+        #             textColorRGB = [1,1,1],
+        #             textSize = 1.0,
+        #             lifeTime = 0)
+        # o3d.visualization.draw_geometries([coor, template_pcd, hanging_pcd])
+        # p.removeAllUserDebugItems()
 
         template2hanging_pcd = copy.deepcopy(template_pcd)
         template2hanging_pcd.transform(template2hanging)
         p.addUserDebugText(text =  "LOG : After matching the pose from template pose to target pose (see Open3d window)", 
                     textPosition = [0.6, -0.5, 1.15],
                     textColorRGB = [1,1,1],
-                    textSize = 1.5,
+                    textSize = 1.0,
                     lifeTime = 0)
         o3d.visualization.draw_geometries([coor, template2hanging_pcd, hanging_pcd])
         p.removeAllUserDebugItems()
 
         # grasping pose
-        gripper_grasping_trans = template2init @ template_gripper_trans
-        gripper_grasping_pose = get_7d_pose_from_matrix(gripper_grasping_trans)
-
-        # hanging pose
-        gripper_hanging_trans = template2hanging @ template_gripper_trans
-        gripper_hanging_pose = get_7d_pose_from_matrix(gripper_hanging_trans)
+        gripper_grasping_trans = template2init @ template_gripper_transform
+        gripper_grasping_pose = get_pose_from_matrix(gripper_grasping_trans)
 
         # checkpoint, repeat if repeat (pressing n) 
         repeat = checkpoint(1, 'After finishing pose matching and finding the grasping pose, let\'s grasp the mug')
@@ -595,12 +627,11 @@ def main(args):
 
     # go to the preparing pose
     gripper_prepare_pose = copy.copy(gripper_grasping_pose)
-    gripper_prepare_pose[2] += 0.15
+    gripper_prepare_pose[2] += 0.15 # above the target object
     draw_coordinate(gripper_prepare_pose)
     robot_dense_action(robot, obj_id, gripper_prepare_pose, grasp=False, resolution=action_resolution)
 
     joint_names, joint_poses, joint_types = get_robot_joint_info(robot.robot_id)
-    # print_log(joint_poses)
 
     # ---------------- #
     # --- Grasping --- #
@@ -619,14 +650,12 @@ def main(args):
     # --- Reaching 2 --- #
     # ------------------ #
 
-    # grasp up to the specific pose
-    gripper_key_pose = copy.copy(gripper_hanging_pose)
-    gripper_key_pose[1] += 0.1
-    gripper_key_pose[2] += 0.02
+    # grasp up to the specific pose (the initial pose of RRT)
+    gripper_key_pose = [0.46609909700509006, 0.05339251929170574, 1.3078196991113113, # pos
+                        0.7288042203286783, -0.10651602211491937, 0.676348070687573, 0.007213372381839306] # quat
     draw_coordinate(gripper_key_pose)
-    robot_dense_action(robot, obj_id, gripper_key_pose, grasp=True, resolution=action_resolution)
+    robot_dense_action(robot, obj_id, gripper_key_pose, grasp=True, resolution=action_resolution, gripper2obj=template_obj_transform)
     
-    # print_log(f'keypose : {gripper_key_pose}')
     # record current object pose
     obj_pos, obj_rot = p.getBasePositionAndOrientation(obj_id)
     key_obj_pose = obj_pos + obj_rot
@@ -639,15 +668,22 @@ def main(args):
     # --- Hanging --- #
     # --------------- #
 
-    gripper_key_trans = get_matrix_from_7d_pose(gripper_key_pose)
-    obj_start_pose = get_7d_pose_from_matrix(gripper_key_trans @ np.linalg.inv(template_gripper_trans))
+    gripper_key_trans = get_matrix_from_pose(gripper_key_pose)
+    obj_start_pose = get_pose_from_matrix(gripper_key_trans @ np.linalg.inv(template_gripper_transform))
 
     # avoid collision in initial checking
     obstacles=[hook_id, table_id]
-    obj_hanging_pose = get_7d_pose_from_matrix(template2hanging)
+    obj_hanging_pose = get_pose_from_matrix(template2hanging)
     obj_end_pose = refine_obj_pose(physics_client_id, obj_id, obj_hanging_pose, obstacles=obstacles)
     
     # run RRT-connect to find a path for the mug
+    # TODO: `rrt_connect_7d` is the implementation of RRT-Connect (a modified version of RRT)
+    # You need to answer some questions in your report (15%)
+    # 1. What is the difference between RRT and RRT-Connect? (5%)
+    # 2. Do you think RRT-Connect is more suitable than RRT in this task? Why? (5%)
+    # 3. What do you think are the challenges of sample based planning methods (like RRT or RRT-Connect)
+    #    on this task in real-world? (5%)
+    #    (sample time? collision detection?)
     obj_waypoints = rrt_connect_7d(physics_client_id, obj_id, start_conf=obj_start_pose, target_conf=obj_end_pose, obstacles=obstacles)
 
     if obj_waypoints is None:
@@ -657,14 +693,14 @@ def main(args):
     gripper_waypoints = []
 
     for obj_waypoint in obj_waypoints:
-        obj_trans = get_matrix_from_7d_pose(obj_waypoint)
-        gripper_waypoint = get_7d_pose_from_matrix(obj_trans @ template_gripper_trans)
+        obj_trans = get_matrix_from_pose(obj_waypoint)
+        gripper_waypoint = get_pose_from_matrix(obj_trans @ template_gripper_transform)
         gripper_waypoints.append(gripper_waypoint)
 
     # reset obj pose and execute the gripper waypoints for hanging
     p.resetBasePositionAndOrientation(obj_id, key_obj_pose[:3], key_obj_pose[3:])
     for i in range(len(gripper_waypoints)):
-        robot_dense_action(robot, obj_id, gripper_waypoints[i], grasp=True, resolution=action_resolution)
+        robot_dense_action(robot, obj_id, gripper_waypoints[i], grasp=True, resolution=action_resolution, gripper2obj=template_obj_transform)
 
     # execution step 3 : open the gripper
     robot.pre_grasp()
@@ -679,8 +715,8 @@ def main(args):
     gripper_ending_pose = tuple(gripper_ending_pos) + tuple(gripper_pose[3:])
     robot_dense_action(robot, obj_id, gripper_ending_pose, grasp=False, resolution=action_resolution)
 
-    print_log('process completed')
-    for _ in range(int(1 / SIM_TIMESTEP * 3)): 
+    print_log('finished!!!')
+    for _ in range(int(1 / SIM_TIMESTEP * 2)): 
         p.stepSimulation()
         time.sleep(SIM_TIMESTEP)
 
@@ -690,6 +726,18 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input-dir', '-i', type=str, default='data/mug-Hook_skew')
+    # TODO: (Bonous : up tp 10%)
+    # There are many object-hook pairs in data/, each info.json contain the information
+    # needed in manipulation task.
+    # Try to use different files in this manipulation process, You may get up to 10% bonous 
+    # if you record one of your successful manipulation (object are hung on the hook stably) 
+    # in manipulation.mp4 / manipulation.mov 
+    # 
+    # Hint: 
+    # 1. data/mug_[id]_Hook_bar  => 2%
+    # 2. data/mug_[id]_Hook_60   => 3%
+    # 3. data/mug_[id]_Hook_skew => 5%
+    # 4. data/mug_[id]_Hook_90   => 10% (very difficult)
+    parser.add_argument('--input-dir', '-id', type=str, default='data/mug_19-Hook_60')
     args = parser.parse_args()
     main(args)

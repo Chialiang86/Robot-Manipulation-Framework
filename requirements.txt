@@ -1,9 +1,4 @@
-# colorlog
-# dash
-# dash_bootstrap_components
-# Flask
-# ghalton
-gym 
+gym==0.20.0
 imageio 
 meshio 
 numpy 
@@ -12,10 +7,6 @@ open3d
 opencv_contrib_python
 Pillow 
 plotly 
-psutil 
 pybullet 
-pytorch3d 
-PyYAML
 quaternion
 scipy 
-torch 

@@ -13,6 +13,9 @@ import pybullet_data
 
 # for motion planners
 from utils.motion_planning_utils import get_collision7d_fn
+from utils.bullet_utils import get_pose_from_matrix, get_matrix_from_pose
+
+from fk import your_fk, get_panda_DH_params
 
 # for robot control
 # from pybullet_planning.interfaces.robots.joint import get_custom_limits
@@ -51,7 +54,7 @@ def update_debug_param(robot : pandaEnv):
 
 def robot_key_callback(robot : pandaEnv, keys : dict, object_id : int=None):
 
-    move_offset = 0.01
+    move_offset = 0.005
     rot_offset = 0.02
     ret = None
 
@@ -140,7 +143,9 @@ def refine_tgt_obj_pose(physicsClientId, body, obstacles=[]):
         # print(refine_pose)
     return refine_pose
 
-def main():
+def main(args):
+
+    assert args.type == 0 or args.type == 1, f'type id should be 0 (fk) or 1 (ik), but get {args.type}'
 
     # ------------------------ #
     # --- Setup simulation --- #
@@ -178,7 +183,15 @@ def main():
     # --- Load other objects --- #
     # -------------------------- #
 
-    table_id = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "table/table.urdf"), [1, 0.0, 0.0])
+    table_id = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "table/table.urdf"), [0.9, 0.0, 0.1])
+
+
+    # object
+    urdf_path = args.obj_urdf
+    obj_name = urdf_path.split('/')[-2]
+    assert os.path.exists(urdf_path), f'{urdf_path} not exists'
+    obj_id = p.loadURDF(urdf_path)
+    p.resetBasePositionAndOrientation(obj_id, [0.35, 0.1, 0.78], R.from_rotvec([np.pi / 2, 0, 0]).as_quat())
    
     # grasping
     # robot.apply_action(contact_info['object_pose'])
@@ -219,17 +232,20 @@ def main():
 
     joint_poses_old = [0, 0, 0, 0, 0, 0, 0]
 
-    fk_testcase_max = 0
+    fk_testcase_max = 1000
     fk_dict = {
         'joint_poses': [],
-        'poses': []
+        'poses': [],
+        'jacobian': []
     }
 
-    ik_testcase_max = 101
+    ik_testcase_max = 100
     ik_dict = {
         'current_joint_poses': [],
         'next_poses': []
     }
+
+    dh_params = get_panda_DH_params()
 
     while True:
         
@@ -242,8 +258,34 @@ def main():
                 param_control = not param_control
                 param_ids = update_debug_param(robot)
 
+            elif ord('p') in keys and keys[ord('p')] & (p.KEY_WAS_TRIGGERED): 
+                
+                param_control = not param_control
+                param_ids = update_debug_param(robot)
+
+                obj_pos, obj_rot = p.getBasePositionAndOrientation(obj_id)
+                obj_pose = obj_pos + obj_rot
+                obj_trans = get_matrix_from_pose(obj_pose)
+
+                gripper_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[4]
+                gripper_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[5]
+                gripper_pose = list(gripper_pos) + list(gripper_rot)
+                gripper_trans = get_matrix_from_pose(gripper_pose)
+
+                obj2gripper_trans = np.linalg.inv(obj_trans) @ gripper_trans
+
+                grasping_dict = {
+                    'obj2gripper': obj2gripper_trans.tolist()
+                }
+
+                grasping_fname = f'3d_models/objects/{obj_name}/grasping.json'
+                f = open(grasping_fname, 'w')
+                json.dump(grasping_dict, f, indent=4)
+                f.close()
+                break
+
             else:
-                action = robot_key_callback(robot, keys, -1)
+                action = robot_key_callback(robot, keys, obj_id)
                 if action == 'quit':
                     break
                 elif action == 'close':
@@ -252,7 +294,7 @@ def main():
                     close_flag = False
                 
                 if close_flag:
-                    robot.grasp(-1)
+                    robot.grasp(obj_id)
                     for _ in range(5):
                         p.stepSimulation()
                 
@@ -265,28 +307,43 @@ def main():
                 gripper_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[5]
                 gripper_pose = list(gripper_pos) + list(gripper_rot)
 
-                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > 0.3:
+                new_thresh =    (0.025 if 'easy' in args.difficulty \
+                                else 0.05 if 'medium' in args.difficulty \
+                                else 0.1) \
+                            if args.type == 0 \
+                            else \
+                                (0.1 if 'easy' in args.difficulty \
+                                else 0.2 if 'medium' in args.difficulty \
+                                else 0.3) 
 
-                    # fk_dict['joint_poses'].append(joint_poses)
-                    # fk_dict['poses'].append(gripper_pose)
-                    # fk_testcase_num = len(fk_dict['joint_poses'])
-                    # if fk_testcase_num == fk_testcase_max:
-                    #     f = open('fk_testcase.json', 'w')
-                    #     json.dump(fk_dict, f, indent=4)
-                    #     f.close()
-                    #     break
+                if np.linalg.norm((np.asarray(joint_poses_old) - np.asarray(joint_poses)), ord=2) > new_thresh:
+
+                    if args.type == 0: # fk
+                        fk_dict['joint_poses'].append(joint_poses)
+                        fk_dict['poses'].append(gripper_pose)
+                        _, jacobian = your_fk(robot, dh_params, joint_poses)
+                        fk_dict['jacobian'].append(jacobian.tolist())
+                        fk_testcase_num = len(fk_dict['joint_poses'])
+                        print(f'fk testcase num = {fk_testcase_num} / {fk_testcase_max}')
+                        if fk_testcase_num == fk_testcase_max:
+                            f = open(f'test_case/fk_testcase_{args.difficulty}.json', 'w')
+                            json.dump(fk_dict, f, indent=4)
+                            f.close()
+                            break
                     
-                    ik_dict['current_joint_poses'].append(joint_poses_old)
-                    ik_dict['next_poses'].append(gripper_pose)
-                    ik_testcase_num = len(ik_dict['current_joint_poses'])
-                    print(f'fk testcase num = {ik_testcase_num - 1} / {ik_testcase_max - 1}')
-                    if ik_testcase_num == ik_testcase_max:
-                        ik_dict['current_joint_poses'] = ik_dict['current_joint_poses'][1:]
-                        ik_dict['next_poses'] = ik_dict['next_poses'][1:]
-                        f = open('ik_testcase.json', 'w')
-                        json.dump(ik_dict, f, indent=4)
-                        f.close()
-                        break
+                    if args.type == 1: # ik
+                        ik_dict['current_joint_poses'].append(joint_poses_old)
+                        ik_dict['next_poses'].append(gripper_pose)
+                        ik_testcase_num = len(ik_dict['current_joint_poses'])
+                        if ik_testcase_num > 0:
+                            print(f'ik testcase num = {ik_testcase_num - 1} / {ik_testcase_max}')
+                        if ik_testcase_num - 1 == ik_testcase_max:
+                            ik_dict['current_joint_poses'] = ik_dict['current_joint_poses'][1:]
+                            ik_dict['next_poses'] = ik_dict['next_poses'][1:]
+                            f = open(f'test_case/ik_testcase_{args.difficulty}.json', 'w')
+                            json.dump(ik_dict, f, indent=4)
+                            f.close()
+                            break
 
                     joint_poses_old = joint_poses
 
@@ -304,5 +361,7 @@ def main():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--difficulty', '-d', type=str, default='easy')
+    parser.add_argument('--type', '-t', type=int, default=0, help='0 for fk, 1 for ik')
+    parser.add_argument('--obj-urdf', '-urdf', type=str, default='3d_models/objects/mug_67/base.urdf')
     args = parser.parse_args()
-    main()
+    main(args)

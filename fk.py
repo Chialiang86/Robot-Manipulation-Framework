@@ -5,10 +5,9 @@ from scipy.spatial.transform import Rotation as R
 
 # for simulator
 import pybullet as p
-import pybullet_data
 
 # for geometry information
-from utils.bullet_utils import draw_coordinate, get_matrix_from_7d_pose, get_7d_pose_from_matrix
+from utils.bullet_utils import draw_coordinate, get_matrix_from_pose, get_pose_from_matrix
 
 SIM_TIMESTEP = 1.0 / 240.0
 JACOBIAN_SCORE_MAX = 15.0
@@ -22,6 +21,9 @@ def cross(a : np.ndarray, b : np.ndarray) -> np.ndarray :
 
 def get_panda_DH_params():
 
+    # TODO: this is the DH parameters of the robot in this assignment,
+    # It will be a little bit different from the official spec 
+    # You need to use these parameters to compute the forward kinematics and Jacobian matrix
     # details : 
     # see "pybullet_robot_envs/panda_envs/robot_data/franka_panda/panda_model.urdf" in this project folder
     # official spec : https://frankaemika.github.io/docs/control_parameters.html#denavithartenberg-parameters
@@ -33,8 +35,7 @@ def get_panda_DH_params():
         {'a':  0.0825, 'd': 0,     'alpha':  np.pi/2}, # panda_joint4
         {'a': -0.0825, 'd': 0.384, 'alpha': -np.pi/2}, # panda_joint5
         {'a':  0,      'd': 0,     'alpha':  np.pi/2}, # panda_joint6
-        {'a':  0.088,  'd': 0.07, 'alpha':  np.pi/2}, # panda_joint7
-        # {'a':  0.088,  'd': 0.107, 'alpha':  np.pi/2},
+        {'a':  0.088,  'd': 0.07,  'alpha':  np.pi/2}, # panda_joint7
     ]
 
     return dh_params
@@ -48,14 +49,14 @@ def your_fk(robot, DH_params : dict, q : list or tuple or np.ndarray) -> np.ndar
     assert len(DH_params) == 7 and len(q) == 7, f'Both DH_params and q should contain 7 values,\n' \
                                                 f'but get len(DH_params) = {DH_params}, len(q) = {len(q)}'
 
-    A = get_matrix_from_7d_pose(base_pose) # a 4x4 matrix, type should be np.ndarray
+    A = get_matrix_from_pose(base_pose) # a 4x4 matrix, type should be np.ndarray
     jacobian = np.zeros((6, 7)) # a 6x7 matrix, type should be np.ndarray
 
     # -------------------------------------------------------------------------------- #
     # --- TODO: Read the task description                                          --- #
     # --- Task 1 : Compute Forward-Kinematic and Jacobain of the robot by yourself --- #
     # ---          Try to implement `your_fk` function without using any pybullet  --- #
-    # ---          API.                                                            --- #
+    # ---          API. (30% for accuracy)                                         --- #
     # --- Note : please modify the code in `your_ik`.                              --- #
     # -------------------------------------------------------------------------------- #
     
@@ -107,10 +108,13 @@ def your_fk(robot, DH_params : dict, q : list or tuple or np.ndarray) -> np.ndar
 
     ###################
 
-    pose_7d = np.asarray(get_7d_pose_from_matrix(A))
+    pose_7d = np.asarray(get_pose_from_matrix(A))
 
     return pose_7d, jacobian
 
+# TODO: [for your information]
+# This function is the scoring function, we will use the same code 
+# to score your algorithm using all the testcases
 def score_fk(robot, testcase_files : str, visualize : bool=False):
 
     testcase_file_num = len(testcase_files)
@@ -120,13 +124,13 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
     jacobian_score = [JACOBIAN_SCORE_MAX / testcase_file_num for _ in range(testcase_file_num)]
     jacobian_error_cnt = [0 for _ in range(testcase_file_num)]
 
-    difficulty = ['easy  ', 'normal', 'hard  ', 'devil']
+    difficulty = ['easy  ', 'normal', 'hard  ', 'easy_ta  ', 'normal_ta', 'hard_ta  ']
 
 
     p.addUserDebugText(text = "Scoring Your Forward Kinematic Algorithm ...", 
-                        textPosition = [-0.3, -0.6, 1.3],
-                        textColorRGB = [0, 0.6, 0.6],
-                        textSize = 1.5,
+                        textPosition = [0.1, -0.6, 1.5],
+                        textColorRGB = [1,1,1],
+                        textSize = 1.0,
                         lifeTime = 0)
 
     print("============================ Task 1 : Forward Kinematic ============================\n")
@@ -139,6 +143,7 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
         joint_poses = fk_dict['joint_poses']
         poses = fk_dict['poses']
         jacobians = fk_dict['jacobian']
+
         cases_num = len(fk_dict['joint_poses'])
 
         penalty = TASK1_SCORE_MAX / cases_num
@@ -195,6 +200,7 @@ def main(args):
     # Create pybullet env without GUI
     visualize = args.gui
     physics_client_id = p.connect(p.GUI if visualize else p.DIRECT)
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
     p.resetDebugVisualizerCamera(
         cameraDistance=0.5,
         cameraYaw=90,
@@ -219,7 +225,10 @@ def main(args):
     testcase_files = [
         'test_case/fk_testcase_easy.json',
         'test_case/fk_testcase_medium.json',
-        'test_case/fk_testcase_hard.json'
+        'test_case/fk_testcase_hard.json',
+        'test_case/fk_testcase_easy_ta.json',
+        'test_case/fk_testcase_medium_ta.json',
+        'test_case/fk_testcase_hard_ta.json'
     ]
 
     # scoring your algorithm

@@ -3,23 +3,27 @@ import pybullet as p
 import quaternion
 from scipy.spatial.transform import Rotation as R
 
-def xyzw2wxyz(quat : np.ndarray):
+# quaternion format converter => (x, y, z, w) to (w, x, y, z)
+def xyzw2wxyz(quat : list or np.ndarray):
     assert len(quat) == 4, f'quaternion size must be 4, got {len(quat)}'
     return np.asarray([quat[3], quat[0], quat[1], quat[2]])
 
-def wxyz2xyzw(quat : np.ndarray):
+# quaternion format converter => (w, x, y, z) to (x, y, z, w)
+def wxyz2xyzw(quat : list or np.ndarray):
     assert len(quat) == 4, f'quaternion size must be 4, got {len(quat)}'
     return np.asarray([quat[1], quat[2], quat[3], quat[0]])
 
+# pose format converter => (x, y, z, rx, ry, rz) to (x, y, z, quaternion in (x, y, z, w) format)
 def pose_6d_to_7d(pose : list or tuple or np.ndarray):
     assert len(pose) == 6, f'input array size should be 6d but got {len(pose)}d'
 
     pos = pose[:3]
     rot_vec = pose[3:]
-    rot_quat = R.from_rotvec(rot_vec).as_quat()
+    rot_quat = R.from_rotvec(rot_vec).as_quat() # x, y, z, w
 
     return list(pos) + list(rot_quat)
 
+# pose format converter => (x, y, z, quaternion in (x, y, z, w) format) to (x, y, z, rx, ry, rz)
 def pose_7d_to_6d(pose : list or tuple or np.ndarray):
     assert len(pose) == 7, f'input array size should be 7d but got {len(pose)}d'
 
@@ -29,6 +33,7 @@ def pose_7d_to_6d(pose : list or tuple or np.ndarray):
 
     return list(pos) + list(rot_vec)
 
+# convert 6d pose or 7d pose to 4x4 transformation matrix
 def get_matrix_from_pose(pose : list or tuple or np.ndarray) -> np.ndarray:
     assert len(pose) == 6 or len(pose) == 7, f'pose must contain 6 or 7 elements, but got {len(pose)}'
     pos_m = np.asarray(pose[:3])
@@ -45,10 +50,12 @@ def get_matrix_from_pose(pose : list or tuple or np.ndarray) -> np.ndarray:
 
     return ret_m
 
+# convert 4x4 transformation matrix to 6d pose or 7d pose 
 def get_pose_from_matrix(matrix : list or tuple or np.ndarray, 
                         pose_size : int = 7) -> np.ndarray:
 
     mat = np.array(matrix)
+    assert pose_size == 6 or pose_size == 7, f'pose_size should be 6 or 7, but got {pose_size}'
     assert mat.shape == (4, 4), f'pose must contain 4 x 4 elements, but got {mat.shape}'
     
     pos = matrix[:3, 3]
@@ -57,54 +64,16 @@ def get_pose_from_matrix(matrix : list or tuple or np.ndarray,
     if pose_size == 6:
         rot = R.from_matrix(matrix[:3, :3]).as_rotvec()
     elif pose_size == 7:
-        rot = R.from_matrix(matrix[:3, :3]).as_quat()
+        rot = R.from_matrix(matrix[:3, :3]).as_quat()  # x, y, z, w
             
     pose = list(pos) + list(rot)
 
     return np.array(pose)
 
-def get_matrix_from_pos_rot(pos : list or tuple or np.ndarray, rot : list or tuple or np.ndarray):
-    assert (len(pos) == 3 and len(rot) == 4) or (len(pos) == 3 and len(rot) == 3)
-    pos_m = np.asarray(pos)
-    if len(rot) == 3:
-        rot_m = R.from_rotvec(rot).as_matrix()
-    elif len(rot) == 4: # x, y, z, w
-        rot_m = R.from_quat(rot).as_matrix()
-    ret_m = np.identity(4)
-    ret_m[:3, :3] = rot_m
-    ret_m[:3, 3] = pos_m
-    return ret_m
-
-def get_matrix_from_7d_pose(pose : list or tuple or np.ndarray):
-    assert (len(pose) == 7)
-    pos_m = np.asarray(pose[:3])
-    rot_m = R.from_quat(pose[3:]).as_matrix()
-    ret_m = np.identity(4)
-    ret_m[:3, :3] = rot_m
-    ret_m[:3, 3] = pos_m
-    return ret_m
-
-def get_pos_rot_from_matrix(pose : np.ndarray):
-    assert pose.shape == (4, 4)
-    pos = pose[:3, 3]
-    rot = R.from_matrix(pose[:3, :3]).as_quat()
-    return pos, rot
-
-def get_7d_pose_from_matrix(pose : np.ndarray):
-    assert pose.shape == (4, 4)
-    pos = pose[:3, 3]
-    rot = R.from_matrix(pose[:3, :3]).as_quat()
-    pose = list(pos) + list(rot)
-    return pose
-
-def get_6d_pose_from_matrix(pose : np.ndarray):
-    assert pose.shape == (4, 4)
-    pos = pose[:3, 3]
-    rot = R.from_matrix(pose[:3, :3]).as_rotvec()
-    pose = list(pos) + list(rot)
-    return pose
-
-def get_dense_waypoints(start_config : list or tuple or np.ndarray, end_config : list or tuple or np.ndarray, resolution : float=0.005):
+# get dense waypoints from start_config to end_config by interpolation
+def get_dense_waypoints(start_config : list or tuple or np.ndarray, 
+                        end_config : list or tuple or np.ndarray, 
+                        resolution : float=0.005):
 
     assert len(start_config) == 7 and len(end_config) == 7
 
@@ -125,11 +94,15 @@ def get_dense_waypoints(start_config : list or tuple or np.ndarray, end_config :
 
     return ret
 
-def draw_coordinate(pose : np.ndarray or tuple or list, size : float = 0.1, color : np.ndarray=np.asarray([[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
+# draw the pose in 7d (x, y, z, quaternion (x, y, z, w) format) or 4x4d (transformation matrix)
+def draw_coordinate(pose : np.ndarray or tuple or list, 
+                    size : float = 0.1, 
+                    color : np.ndarray=np.asarray([[1, 0, 0], [0, 1, 0], [0, 0, 1]])):
+    
     assert (type(pose) == np.ndarray and pose.shape == (4, 4)) or (len(pose) == 7)
 
     if len(pose) == 7:
-        pose = get_matrix_from_pos_rot(pose[:3], pose[3:])
+        pose = get_matrix_from_pose(pose)
 
     origin = pose[:3, 3]
     x = origin + pose[:3, 0] * size

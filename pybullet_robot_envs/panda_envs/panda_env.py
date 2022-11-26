@@ -21,7 +21,7 @@ class pandaEnv:
     }
 
     # def __init__(self, physicsClientId, use_IK=0, base_position=(-0.20, 0.10, 0.5), control_orientation=1, control_eu_or_quat=0,
-    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.13, 0.13, 0.6), control_orientation=1, control_eu_or_quat=0,
+    def __init__(self, physicsClientId, use_IK=0, base_position=(-0.2, 0.13, 0.6), control_orientation=1, control_eu_or_quat=0,
                  joint_action_space=9, includeVelObs=True):
 
         self._physics_client_id = physicsClientId
@@ -109,7 +109,7 @@ class pandaEnv:
         self.apply_action_fingers([0.03, 0.03])
 
     def grasp(self, obj_id=None):
-        self.apply_action_fingers([0.0, 0.0], obj_id)
+        self.apply_action_fingers([0.00, 0.00], obj_id)
 
     def get_gripper_pos(self):
         action = [0, 0]
@@ -130,10 +130,10 @@ class pandaEnv:
             _, forces = self.check_contact_fingertips(obj_id)
             # print("contact forces {}".format(forces))
 
-            if forces[0] >= 30:
+            if forces[0] >= 100:
                 action[0] = p.getJointState(self.robot_id, idx_fingers[0], physicsClientId=self._physics_client_id)[0]
 
-            if forces[1] >= 30:
+            if forces[1] >= 100:
                 action[1] = p.getJointState(self.robot_id, idx_fingers[1], physicsClientId=self._physics_client_id)[0]
 
         for i, idx in enumerate(idx_fingers):
@@ -145,62 +145,62 @@ class pandaEnv:
                                     maxVelocity=1,
                                     physicsClientId=self._physics_client_id)
 
+    # # Note: You SHOULD NOT use this function to control the robot
+    # def apply_action(self, action):
 
-    def apply_action(self, action):
+    #     # ------------------ #
+    #     # --- IK control --- #
+    #     # ------------------ #
 
-        # ------------------ #
-        # --- IK control --- #
-        # ------------------ #
+    #     if not (len(action) == 3 or len(action) == 6 or len(action) == 7):
+    #         raise AssertionError('number of action commands must be \n- 3: (dx,dy,dz)'
+    #                                 '\n- 6: (dx,dy,dz,droll,dpitch,dyaw)'
+    #                                 '\n- 7: (dx,dy,dz,qx,qy,qz,w)'
+    #                                 '\ninstead it is: ', len(action))
 
-        if not (len(action) == 3 or len(action) == 6 or len(action) == 7):
-            raise AssertionError('number of action commands must be \n- 3: (dx,dy,dz)'
-                                    '\n- 6: (dx,dy,dz,droll,dpitch,dyaw)'
-                                    '\n- 7: (dx,dy,dz,qx,qy,qz,w)'
-                                    '\ninstead it is: ', len(action))
+    #     # --- Constraint end-effector pose inside the workspace --- #
 
-        # --- Constraint end-effector pose inside the workspace --- #
+    #     dx, dy, dz = action[:3]
+    #     new_pos = [dx, dy,
+    #                 min(self._workspace_lim[2][1], max(self._workspace_lim[2][0], dz))]
+    #     new_quat_orn = action[3:7]
 
-        dx, dy, dz = action[:3]
-        new_pos = [dx, dy,
-                    min(self._workspace_lim[2][1], max(self._workspace_lim[2][0], dz))]
-        new_quat_orn = action[3:7]
+    #     # if orientation is not under control, keep it fixed
+    #     if not self._control_orientation:
+    #         new_quat_orn = p.getQuaternionFromEuler(self._home_hand_pose[3:6])
 
-        # if orientation is not under control, keep it fixed
-        if not self._control_orientation:
-            new_quat_orn = p.getQuaternionFromEuler(self._home_hand_pose[3:6])
+    #     # otherwise, if it is defined as euler angles
+    #     elif len(action) == 6:
+    #         droll, dpitch, dyaw = action[3:]
 
-        # otherwise, if it is defined as euler angles
-        elif len(action) == 6:
-            droll, dpitch, dyaw = action[3:]
+    #         eu_orn = [min(m.pi, max(-m.pi, droll)),
+    #                     min(m.pi, max(-m.pi, dpitch)),
+    #                     min(m.pi, max(-m.pi, dyaw))]
 
-            eu_orn = [min(m.pi, max(-m.pi, droll)),
-                        min(m.pi, max(-m.pi, dpitch)),
-                        min(m.pi, max(-m.pi, dyaw))]
+    #         new_quat_orn = p.getQuaternionFromEuler(eu_orn)
 
-            new_quat_orn = p.getQuaternionFromEuler(eu_orn)
+    #     # otherwise, if it is define as quaternion
+    #     elif len(action) == 7:
+    #         new_quat_orn = action[3:7]
 
-        # otherwise, if it is define as quaternion
-        elif len(action) == 7:
-            new_quat_orn = action[3:7]
+    #     # otherwise, use current orientation
+    #     else:
+    #         new_quat_orn = p.getLinkState(self.robot_id, self.end_eff_idx, physicsClientId=self._physics_client_id)[5]
 
-        # otherwise, use current orientation
-        else:
-            new_quat_orn = p.getLinkState(self.robot_id, self.end_eff_idx, physicsClientId=self._physics_client_id)[5]
+    #     # --- compute joint positions with IK --- #
+    #     jointPoses = p.calculateInverseKinematics(self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
+    #                                                 maxNumIterations=500,
+    #                                                 residualThreshold=.001,
+    #                                                 physicsClientId=self._physics_client_id)
 
-        # --- compute joint positions with IK --- #
-        jointPoses = p.calculateInverseKinematics(self.robot_id, self.end_eff_idx, new_pos, new_quat_orn,
-                                                    maxNumIterations=500,
-                                                    residualThreshold=.001,
-                                                    physicsClientId=self._physics_client_id)
-
-        # --- set joint control --- #
-        p.setJointMotorControlArray(bodyUniqueId=self.robot_id,
-                                    jointIndices=self._joint_name_to_ids.values(),
-                                    controlMode=p.POSITION_CONTROL,
-                                    targetPositions=jointPoses,
-                                    positionGains=[0.2] * len(jointPoses),
-                                    velocityGains=[1] * len(jointPoses),
-                                    physicsClientId=self._physics_client_id)
+    #     # --- set joint control --- #
+    #     p.setJointMotorControlArray(bodyUniqueId=self.robot_id,
+    #                                 jointIndices=self._joint_name_to_ids.values(),
+    #                                 controlMode=p.POSITION_CONTROL,
+    #                                 targetPositions=jointPoses,
+    #                                 positionGains=[0.2] * len(jointPoses),
+    #                                 velocityGains=[1] * len(jointPoses),
+    #                                 physicsClientId=self._physics_client_id)
 
     def check_contact_fingertips(self, obj_id):
         # check if there is any contact on the internal part of the fingers, to control if they are correctly touching an object

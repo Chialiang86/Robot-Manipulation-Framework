@@ -8,18 +8,19 @@ import pybullet as p
 import pybullet_data
 
 # for geometry information
-from utils.bullet_utils import draw_coordinate, get_dense_waypoints, pose_7d_to_6d, get_matrix_from_pose, get_pose_from_matrix
+from utils.bullet_utils import draw_coordinate, get_dense_waypoints, get_matrix_from_pose, get_pose_from_matrix
 
 # you may use your forward kinematic algorithm to compute 
 from fk import your_fk, get_panda_DH_params
 
 SIM_TIMESTEP = 1.0 / 240.0
 IK_SCORE_MAX = 30
-IK_ERROR_THRESH = 0.01
+IK_ERROR_THRESH = 0.02
 
 def cross(a : np.ndarray, b : np.ndarray) -> np.ndarray :
     return np.cross(a, b)
 
+# this is the pybullet version
 def pybullet_ik(robot, new_pose : list or tuple or np.ndarray, 
                 max_iters : int=1000, stop_thresh : float=.001):
 
@@ -92,7 +93,7 @@ def your_ik(robot, new_pose : list or tuple or np.ndarray,
                 break
         
         step_raw = step_ratio * np.sqrt(dist)
-        step = 0.02 if step_raw > 0.02 else step_raw
+        step = 0.015 if step_raw > 0.015 else step_raw
 
         tmp_jacobian /= np.linalg.norm(tmp_jacobian)
         delta_q = np.linalg.pinv(tmp_jacobian) @ (step * delta_x)
@@ -132,20 +133,16 @@ def apply_action(robot, to_pose : list or tuple or np.ndarray):
         # -------------------------------------------------------------------------------- #
         # --- TODO: Read the task description                                          --- #
         # --- Task 2 : Compute Inverse-Kinematic Solver of the robot by yourself.      --- #
-        # ---          Try to implement `your_ik` function without using any pybullet  --- #
-        # ---          API.                                                            --- #
+        # ---          Try to implement `your_ik` function WITHOUT using ANY pybullet  --- #
+        # ---          API. (40% : 30% for accuracy and 10% for the report)            --- #
         # --- Note : please modify the code in `your_ik` function.                     --- #
         # -------------------------------------------------------------------------------- #
 
-        #### your code ####
-        
-        # you can use this function to see the correct version
+        # # you can use this function to see the correct version
         # joint_poses = pybullet_ik(robot, new_pose)
 
         # this is the function you need to implement
         joint_poses = your_ik(robot, new_pose)
-
-        ###################
 
         # --- set joint control --- #
         p.setJointMotorControlArray(bodyUniqueId=robot.robot_id,
@@ -156,7 +153,8 @@ def apply_action(robot, to_pose : list or tuple or np.ndarray):
                                     velocityGains=[1] * len(joint_poses),
                                     physicsClientId=robot._physics_client_id)
 
-def robot_dense_action(robot, obj_id : int, to_pose : list, grasp : bool=False, resolution : float=0.001):
+# we will use this function in manipulation.py to control the robot
+def robot_dense_action(robot, obj_id : int, to_pose : list, grasp : bool=False, resolution : float=0.001, gripper2obj = np.identity(4)):
     
     # interpolation from the current pose to the target pose
     gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[0]
@@ -167,27 +165,33 @@ def robot_dense_action(robot, obj_id : int, to_pose : list, grasp : bool=False, 
     for i in range(len(waypoints)):
         
         apply_action(robot, waypoints[i])
-
+        
+        if grasp:
+            obj_pose = get_pose_from_matrix(get_matrix_from_pose(waypoints[i]) @ gripper2obj)
         for _ in range(5): 
-            p.stepSimulation()
             if grasp:
-                robot.grasp(obj_id=obj_id)
+                # we can use robot.grasp(obj_id) but there are some bugs in it :(
+                # so we use the folling line instead
+                p.resetBasePositionAndOrientation(obj_id, obj_pose[:3], obj_pose[3:])
+            p.stepSimulation()
             time.sleep(SIM_TIMESTEP)
 
+# TODO: [for your information]
+# This function is the scoring function, we will use the same code 
+# to score your algorithm using all the testcases
 def score_ik(robot, testcase_files : str, visualize : bool=False):
 
     testcase_file_num = len(testcase_files)
     ik_score = [IK_SCORE_MAX / testcase_file_num for _ in range(testcase_file_num)]
     ik_error_cnt = [0 for _ in range(testcase_file_num)]
 
-    difficulty = ['easy  ', 'normal', 'hard  ', 'devil']
-
+    difficulty = ['easy  ', 'normal', 'hard  ', 'easy_ta  ', 'normal_ta', 'hard_ta  ']
     joint_ids = range(7)
 
     p.addUserDebugText(text = "Scoring Your Inverse Kinematic Algorithm ...", 
-                        textPosition = [-0.3, -0.6, 1.3],
-                        textColorRGB = [0, 0.6, 0.6],
-                        textSize = 1.5,
+                        textPosition = [0.1, -0.6, 1.5],
+                        textColorRGB = [1,1,1],
+                        textSize = 1.0,
                         lifeTime = 0)
 
     print("============================ Task 2 : Inverse Kinematic ============================\n")
@@ -222,8 +226,8 @@ def score_ik(robot, testcase_files : str, visualize : bool=False):
 
             # TODO: check your default arguments of `max_iters` and `stop_thresh` are your best parameters.
             #       We will only pass default arguments of your `max_iters` and `stop_thresh`.
-            # your_joint_poses = your_ik(robot, poses[i]) 
-            your_joint_poses = pybullet_ik(robot, poses[i]) 
+            # your_joint_poses = pybullet_ik(robot, poses[i]) 
+            your_joint_poses = your_ik(robot, poses[i]) 
             gt_pose = poses[i]
 
             p.setJointMotorControlArray(bodyUniqueId=robot.robot_id,
@@ -252,7 +256,6 @@ def score_ik(robot, testcase_files : str, visualize : bool=False):
             ik_error = np.linalg.norm(your_pose - np.asarray(gt_pose), ord=2)
             ik_errors.append(ik_error)
             if ik_error > IK_ERROR_THRESH:
-                print(ik_error)
                 ik_score[file_id] -= penalty
                 ik_error_cnt[file_id] += 1
 
@@ -289,14 +292,13 @@ def main(args):
         cameraDistance=1.0,
         cameraYaw=90,
         cameraPitch=0,
-        # cameraTargetPosition=[0.088, 0.0, 0.926]
         cameraTargetPosition=[0.5, 0.0, 1.0]
     )
     p.resetSimulation()
     p.setPhysicsEngineParameter(numSolverIterations=150)
     p.setTimeStep(SIM_TIMESTEP)
     p.setGravity(0, 0, -9.8)
-    p.loadURDF(os.path.join(pybullet_data.getDataPath(), "table/table.urdf"), [1, 0.0, 0.1])
+    p.loadURDF(os.path.join(pybullet_data.getDataPath(), "table/table.urdf"), [0.9, 0.0, 0.0])
 
     # ------------------- #
     # --- Setup robot --- #
@@ -324,44 +326,61 @@ def main(args):
         p.stepSimulation()
         time.sleep(SIM_TIMESTEP)
 
-    # # get DH params
-    # gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[0]
-    # gripper_start_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[1]
-    # gripper_start_pose = list(gripper_start_pos) + list(gripper_start_rot)
+    # get DH params
+    gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[0]
+    gripper_start_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[1]
+    gripper_start_pose = list(gripper_start_pos) + list(gripper_start_rot)
 
-    # # -------------------------------------------- #
-    # # --- Test your Inverse Kinematic function --- #
-    # # -------------------------------------------- #
-
-    # # warmup for 2 secs
-    # for _ in range(int(1 / SIM_TIMESTEP * 2)):
-    #     p.stepSimulation()
-    #     time.sleep(SIM_TIMESTEP)
-    # p.removeAllUserDebugItems()
-
-    # # example target pose
+    # ------------------------------------------------------------------ #
+    # --- Test your Inverse Kinematic function using one target pose --- #
+    # ------------------------------------------------------------------ #
     
-    # gripper_end_pose = [0.4775,  0.0762, 1.3017, # pos
-    #                     0.7084, -0.2386, 0.6625, -0.0481] # rot 
+    # warmup for 2 secs
+    p.addUserDebugText(text = "Warmup for 2 secs ...", 
+                        textPosition = [0.1, -0.6, 1.5],
+                        textColorRGB = [1,1,1],
+                        textSize = 1.0,
+                        lifeTime = 0)
+    for _ in range(int(1 / SIM_TIMESTEP * 2)):
+        p.stepSimulation()
+        time.sleep(SIM_TIMESTEP)
+    p.removeAllUserDebugItems()
 
-    # action_resolution = 0.002
-    # draw_coordinate(gripper_start_pose) # from
-    # draw_coordinate(gripper_end_pose) # to
-    # robot_dense_action(robot, obj_id=-1, to_pose=gripper_end_pose, resolution=action_resolution)
+    # example target pose
+    gripper_end_pose = [0.4775,  0.0762, 1.3017, # pos
+                        0.7084, -0.2386, 0.6625, -0.0481] # rot 
 
-    # # wait for 2 secs
-    # for _ in range(int(1 / SIM_TIMESTEP * 2)):
-    #     p.stepSimulation()
-    #     time.sleep(SIM_TIMESTEP)
-    # p.removeAllUserDebugItems()
+    action_resolution = 0.005
+    draw_coordinate(gripper_start_pose) # from
+    draw_coordinate(gripper_end_pose) # to
+    p.addUserDebugText(text = "Testing one example pose ...", 
+                        textPosition = [0.1, -0.6, 1.5],
+                        textColorRGB = [1,1,1],
+                        textSize = 1.0,
+                        lifeTime = 0)
+
+    robot_dense_action(robot, obj_id=-1, to_pose=gripper_end_pose, resolution=action_resolution)
+
+    # wait for 2 secs
+    for _ in range(int(1 / SIM_TIMESTEP * 2)):
+        p.stepSimulation()
+        time.sleep(SIM_TIMESTEP)
+    p.removeAllUserDebugItems()
 
     # test your ik solver
-
     testcase_files = [
         'test_case/ik_testcase_easy.json',
         'test_case/ik_testcase_medium.json',
-        'test_case/ik_testcase_hard.json'
+        'test_case/ik_testcase_hard.json',
+        'test_case/ik_testcase_easy_ta.json',
+        'test_case/ik_testcase_medium_ta.json',
+        'test_case/ik_testcase_hard_ta.json',
     ]
+
+
+    # ------------------------------------------------------------- #
+    # --- Test your Inverse Kinematic function using test cases --- #
+    # ------------------------------------------------------------- #
 
     # scoring your algorithm
     score_ik(robot, testcase_files, visualize=args.visualize_pose)
