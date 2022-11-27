@@ -146,7 +146,7 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
 
         cases_num = len(fk_dict['joint_poses'])
 
-        penalty = TASK1_SCORE_MAX / cases_num
+        penalty = (TASK1_SCORE_MAX / testcase_file_num) / (0.3 * cases_num)
 
         for i in range(cases_num):
             your_pose, your_jacobian = your_fk(robot, dh_params, joint_poses[i])
@@ -172,9 +172,9 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
         jacobian_score[file_id] = 0.0 if jacobian_score[file_id] < 0.0 else jacobian_score[file_id]
 
         score_msg = "- Difficulty : {}\n".format(difficulty[file_id]) + \
-                    "- Your Score Of Forward Kinematic : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}\n".format(
+                    "- Your Score Of Forward Kinematic : {:00.03f} / {:00.03f}, Error Count : {:4d} / {:4d}\n".format(
                             fk_score[file_id], FK_SCORE_MAX / testcase_file_num, fk_error_cnt[file_id], cases_num) + \
-                    "- Your Score Of Jacobian Matrix   : {:00.02f} / {:00.02f}, Error Count : {:4d} / {:4d}\n".format(
+                    "- Your Score Of Jacobian Matrix   : {:00.03f} / {:00.03f}, Error Count : {:4d} / {:4d}\n".format(
                             jacobian_score[file_id], JACOBIAN_SCORE_MAX / testcase_file_num, jacobian_error_cnt[file_id], cases_num)
         
         print(score_msg)
@@ -187,7 +187,7 @@ def score_fk(robot, testcase_files : str, visualize : bool=False):
         total_jacobian_score += jacobian_score[file_id]
     
     print("====================================================================================")
-    print("- Your Total Score : {:00.02f} / {:00.02f}".format(
+    print("- Your Total Score : {:00.03f} / {:00.03f}".format(
         total_fk_score + total_jacobian_score, FK_SCORE_MAX + JACOBIAN_SCORE_MAX))
     print("====================================================================================")
 

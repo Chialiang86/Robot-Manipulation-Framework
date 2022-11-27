@@ -2,7 +2,6 @@ import glob, os, time, json, argparse
 import pybullet as p
 import numpy as np
 import pybullet_data
-import scipy.io as sio
 import open3d as o3d
 import xml.etree.ElementTree as ET
 

@@ -12,11 +12,11 @@ from pybullet_planning.interfaces.planner_interface.joint_motion_planning import
 from pybullet_planning.motion_planners.rrt_connect import birrt
 
 # for robot control
-from utils.bullet_utils import draw_coordinate, get_pose_from_matrix, get_matrix_from_pose, draw_bbox, get_robot_joint_info
+from utils.bullet_utils import draw_coordinate, get_dense_waypoints, get_pose_from_matrix, get_matrix_from_pose, draw_bbox, get_robot_joint_info
 from pybullet_robot_envs.panda_envs.panda_env import pandaEnv
 
 # for your custom IK solver
-from ik import robot_dense_action
+from ik import your_ik
 
 SIM_TIMESTEP = 1.0 / 240
 
@@ -300,6 +300,62 @@ def refine_obj_pose(physicsClientId : int, obj : int, original_pose, obstacles=[
         refine_pose = np.concatenate((refine_pose6d[:3], R.from_rotvec(refine_pose6d[3:]).as_quat()))
     return refine_pose
 
+
+def apply_action(robot, to_pose : list or tuple or np.ndarray):
+
+        # ------------------ #
+        # --- IK control --- #
+        # ------------------ #
+
+        if not len(to_pose) == 7:
+            raise AssertionError('number of action commands must be 7: (dx,dy,dz,qx,qy,qz,w)'
+                                    '\ninstead it is: ', len(to_pose))
+
+        # --- Constraint end-effector pose inside the workspace --- #
+
+        dx, dy, dz = to_pose[:3]
+        new_pos = [dx, dy, min(robot._workspace_lim[2][1], max(robot._workspace_lim[2][0], dz))]
+        new_rot = to_pose[3:7]
+        new_pose = list(new_pos) + list(new_rot)
+
+        # you can use this function to see the correct version
+        # joint_poses = pybullet_ik(robot, new_pose)
+
+        # this is the function you need to implement
+        joint_poses = your_ik(robot, new_pose)
+
+        # --- set joint control --- #
+        p.setJointMotorControlArray(bodyUniqueId=robot.robot_id,
+                                    jointIndices=robot._joint_name_to_ids.values(),
+                                    controlMode=p.POSITION_CONTROL,
+                                    targetPositions=joint_poses,
+                                    positionGains=[0.2] * len(joint_poses),
+                                    velocityGains=[1] * len(joint_poses),
+                                    physicsClientId=robot._physics_client_id)
+
+# we will use this function in `manipulation.py` to control the robot
+def robot_dense_action(robot, obj_id : int, to_pose : list, grasp : bool=False, resolution : float=0.001, gripper2obj = np.identity(4)):
+    
+    # interpolation from the current pose to the target pose
+    gripper_start_pos = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[0]
+    gripper_start_rot = p.getLinkState(robot.robot_id, robot.end_eff_idx, physicsClientId=robot._physics_client_id)[1]
+    gripper_start_pose = list(gripper_start_pos) + list(gripper_start_rot)
+    waypoints = get_dense_waypoints(gripper_start_pose, to_pose, resolution=resolution)
+    
+    for i in range(len(waypoints)):
+        
+        apply_action(robot, waypoints[i])
+        
+        if grasp:
+            obj_pose = get_pose_from_matrix(get_matrix_from_pose(waypoints[i]) @ gripper2obj)
+        for _ in range(5): 
+            if grasp:
+                # we can use robot.grasp(obj_id) but there are some bugs in it :(
+                # so we use the folling line instead
+                p.resetBasePositionAndOrientation(obj_id, obj_pose[:3], obj_pose[3:])
+            p.stepSimulation()
+            time.sleep(SIM_TIMESTEP)
+
 def rrt_connect_7d(physics_client_id, obj_id, start_conf, target_conf, 
                     obstacles : list = [], diagnosis=False, **kwargs):
 
@@ -552,14 +608,16 @@ def main(args):
         error = 0.0
         for i in range(template_tran.shape[1]):
             error += np.linalg.norm(template_tran[:,i] - init_3d_kpts_homo[:, i], ord=2)
-        print_log('template2init mean error = {}'.format(np.mean(error)))
+        print('============ pose matching error ============')
+        print('template2init mean error = {}'.format(np.mean(error)))
 
         # Computing the matching error between template pose and hanging pose  
         hanging_tran = np.linalg.inv(hanging_extrinsic) @ template2hanging @ template_extrinsic @ template_3d_kpts_homo
         error = 0.0
         for i in range(template_tran.shape[1]):
             error += np.linalg.norm(hanging_tran[:,i] - hanging_3d_kpts_homo[:, i], ord=2)
-        print_log('template2hanging mean error = {}'.format(np.mean(error)))
+        print('template2hanging mean error = {}'.format(np.mean(error)))
+        print('=============================================')
 
         # Visualize the results
 
