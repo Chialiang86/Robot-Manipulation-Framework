@@ -1,4 +1,4 @@
-# PDMS Homework 4: A Robot Manipulation Framework
+# A Robot Manipulation Framework
 
 ### Recommended Environment
 - Ubuntu 20.04
